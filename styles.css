@@ -119,6 +119,16 @@ button {
   color: #6e4055;
 }
 
+.sync-status {
+  border: 1px solid #ebb8cc;
+  background: #fff7fb;
+  color: #6e4055;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 main {
   min-width: 0;
   padding: 34px;
@@ -231,7 +241,8 @@ main {
 
 .dashboard-layout,
 .bank-layout,
-.import-layout {
+.import-layout,
+.settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
   gap: 18px;
@@ -497,6 +508,11 @@ textarea {
   gap: 14px;
 }
 
+.stacked-form {
+  display: grid;
+  gap: 14px;
+}
+
 .two-column {
   display: grid;
   grid-template-columns: 1fr 180px;
@@ -645,6 +661,7 @@ legend {
   .dashboard-layout,
   .bank-layout,
   .import-layout,
+  .settings-layout,
   .setup-row {
     grid-template-columns: 1fr;
   }

@@ -22,7 +22,10 @@
           <button class="nav-tab" data-view="practice">Practice</button>
           <button class="nav-tab" data-view="bank">Question Bank</button>
           <button class="nav-tab" data-view="import">Import</button>
+          <button class="nav-tab" data-view="settings">Settings</button>
         </nav>
+
+        <div class="sync-status" id="syncStatus">Local only</div>
 
         <div class="sidebar-stats">
           <span>Total questions</span>
@@ -245,6 +248,70 @@
             </section>
           </div>
         </section>
+
+        <section class="view" id="settingsView">
+          <div class="page-heading compact">
+            <div>
+              <p class="eyebrow">Cloud sync</p>
+              <h2>Connect Supabase once, then use this app everywhere.</h2>
+            </div>
+          </div>
+
+          <div class="settings-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Supabase connection</h3>
+              </div>
+              <form id="supabaseSettingsForm" class="stacked-form">
+                <label>
+                  Project URL
+                  <input id="supabaseUrlInput" placeholder="https://your-project.supabase.co" />
+                </label>
+                <label>
+                  Public anon key
+                  <input id="supabaseKeyInput" placeholder="eyJ..." />
+                </label>
+                <div class="form-actions">
+                  <button type="submit" class="primary-action">Save connection</button>
+                </div>
+              </form>
+              <p class="helper-text">Use only the Project URL that ends in .supabase.co and the public anon key. Do not paste a Supabase dashboard URL or service role key.</p>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Account</h3>
+              </div>
+              <form id="authForm" class="stacked-form">
+                <label>
+                  Email
+                  <input id="authEmailInput" type="email" autocomplete="email" placeholder="you@example.com" />
+                </label>
+                <label>
+                  Password
+                  <input id="authPasswordInput" type="password" autocomplete="current-password" placeholder="At least 6 characters" />
+                </label>
+                <div class="form-actions">
+                  <button type="button" id="signUpButton" class="ghost-button">Create account</button>
+                  <button type="submit" class="primary-action">Sign in</button>
+                </div>
+              </form>
+              <p id="authMessage" class="form-message">Not signed in.</p>
+              <div class="form-actions">
+                <button id="signOutButton" class="ghost-button">Sign out</button>
+              </div>
+            </section>
+
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <h3>Move this device into Supabase</h3>
+              </div>
+              <p class="helper-text">After signing in, use this once to copy the questions already saved in this browser into Supabase. After that, new imports, edits, deletes, flags, and practice attempts save to Supabase automatically.</p>
+              <button id="syncLocalButton" class="primary-action">Sync local questions to Supabase</button>
+              <p id="cloudMessage" class="form-message"></p>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -256,6 +323,7 @@
       </div>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>

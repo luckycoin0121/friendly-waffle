@@ -7,6 +7,7 @@ A no-install practice question app for personal AI-generated question banks. It 
 - Add and edit multiple-choice questions.
 - Import AI-generated questions as JSON.
 - Download a backup JSON file of your full question bank and restore it later.
+- Connect Supabase so questions and practice attempts sync across devices.
 - Filter practice blocks by topic.
 - Use tutor mode for immediate explanations or exam mode for faster blocks.
 - Track accuracy, recent attempts, unused questions, flagged questions, and topic performance.
@@ -22,6 +23,18 @@ For GitHub Pages, push these files to a repository and enable Pages from the rep
 This app stores questions in your browser. Before moving the app folder, changing bookmarks, clearing browser data, or publishing to GitHub Pages, open the Import page and click **Download backup JSON**.
 
 To restore later, paste that backup JSON into the Import page and click **Import questions**.
+
+## Supabase sync
+
+1. Create a Supabase project.
+2. Open the Supabase SQL editor.
+3. Paste and run the contents of `supabase-setup.sql`.
+4. In Supabase, copy your Project URL and public anon key.
+5. Open QuestionForge, go to Settings, and paste both values.
+6. Create an account or sign in.
+7. Click **Sync local questions to Supabase** once to move this device's existing questions into the cloud.
+
+After that, adding questions in the app saves them to Supabase automatically.
 
 ## Import format
 

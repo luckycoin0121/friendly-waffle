@@ -1,4 +1,6 @@
 const STORAGE_KEY = "questionforge-state-v1";
+const SUPABASE_CONFIG_KEY = "questionforge-supabase-config-v1";
+const LOCAL_SYNC_BACKUP_KEY = "questionforge-local-sync-backup-v1";
 
 const sampleQuestions = [
   {
@@ -31,12 +33,16 @@ let state = loadState();
 let activeSession = null;
 let selectedAnswer = null;
 let answerSubmitted = false;
+let supabaseClient = null;
+let currentUser = null;
+let cloudReady = false;
 
 const views = {
   dashboard: document.querySelector("#dashboardView"),
   practice: document.querySelector("#practiceView"),
   bank: document.querySelector("#bankView"),
-  import: document.querySelector("#importView")
+  import: document.querySelector("#importView"),
+  settings: document.querySelector("#settingsView")
 };
 
 const elements = {
@@ -76,38 +82,157 @@ const elements = {
   formTitle: document.querySelector("#formTitle"),
   importInput: document.querySelector("#importInput"),
   importMessage: document.querySelector("#importMessage"),
-  exportBackup: document.querySelector("#exportBackup")
+  exportBackup: document.querySelector("#exportBackup"),
+  syncStatus: document.querySelector("#syncStatus"),
+  supabaseSettingsForm: document.querySelector("#supabaseSettingsForm"),
+  supabaseUrlInput: document.querySelector("#supabaseUrlInput"),
+  supabaseKeyInput: document.querySelector("#supabaseKeyInput"),
+  authForm: document.querySelector("#authForm"),
+  authEmailInput: document.querySelector("#authEmailInput"),
+  authPasswordInput: document.querySelector("#authPasswordInput"),
+  authMessage: document.querySelector("#authMessage"),
+  signUpButton: document.querySelector("#signUpButton"),
+  signOutButton: document.querySelector("#signOutButton"),
+  syncLocalButton: document.querySelector("#syncLocalButton"),
+  cloudMessage: document.querySelector("#cloudMessage")
 };
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) {
-    return { questions: sampleQuestions };
+    return ensureStateShape({ questions: sampleQuestions });
   }
 
   try {
     const parsed = JSON.parse(saved);
-    return {
+    return ensureStateShape({
       questions: Array.isArray(parsed.questions) ? parsed.questions : sampleQuestions
-    };
+    });
   } catch {
-    return { questions: sampleQuestions };
+    return ensureStateShape({ questions: sampleQuestions });
   }
 }
 
 function saveState() {
+  state = ensureStateShape(state);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function saveLocalSyncBackup() {
+  if (!state.questions.length) return;
+  localStorage.setItem(LOCAL_SYNC_BACKUP_KEY, JSON.stringify(ensureStateShape(state)));
+}
+
+function loadLocalSyncBackup() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_SYNC_BACKUP_KEY) || "{}");
+    return ensureStateShape({ questions: Array.isArray(parsed.questions) ? parsed.questions : [] });
+  } catch {
+    return { questions: [] };
+  }
+}
+
+function ensureStateShape(nextState) {
+  return {
+    questions: (nextState.questions || []).map((question) => ({
+      ...question,
+      id: question.id || crypto.randomUUID(),
+      answerIndex: Number(question.answerIndex),
+      choices: Array.isArray(question.choices) ? question.choices : [],
+      tags: Array.isArray(question.tags) ? question.tags : [],
+      flagged: Boolean(question.flagged),
+      attempts: (question.attempts || []).map((attempt) => ({
+        id: attempt.id || crypto.randomUUID(),
+        selectedAnswer: Number(attempt.selectedAnswer),
+        correct: Boolean(attempt.correct),
+        timestamp: Number(attempt.timestamp) || Date.now()
+      }))
+    }))
+  };
+}
+
+function loadSupabaseConfig() {
+  try {
+    const config = JSON.parse(localStorage.getItem(SUPABASE_CONFIG_KEY) || "{}");
+    return {
+      url: config.url || "",
+      key: config.key || ""
+    };
+  } catch {
+    return { url: "", key: "" };
+  }
+}
+
+function saveSupabaseConfig(url, key) {
+  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ url, key }));
 }
 
 function renderAll() {
   renderDashboard();
   renderTopicFilter();
   renderQuestionList();
+  renderCloudStatus();
 }
 
 function switchView(viewName) {
   Object.entries(views).forEach(([name, node]) => node.classList.toggle("active", name === viewName));
   document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.view === viewName));
+}
+
+function renderCloudStatus() {
+  if (!elements.syncStatus) return;
+  if (!supabaseClient) {
+    elements.syncStatus.textContent = "Local only";
+    if (elements.authMessage) elements.authMessage.textContent = "Save your Supabase connection before signing in.";
+    return;
+  }
+  if (!currentUser) {
+    elements.syncStatus.textContent = "Supabase ready - signed out";
+    if (elements.authMessage) elements.authMessage.textContent = "Supabase is connected. Sign in or create an account.";
+    return;
+  }
+  elements.syncStatus.textContent = `Cloud sync on: ${currentUser.email}`;
+  if (elements.authMessage) elements.authMessage.textContent = `Signed in as ${currentUser.email}.`;
+}
+
+function setCloudMessage(message) {
+  if (elements.cloudMessage) elements.cloudMessage.textContent = message;
+}
+
+function setAuthMessage(message) {
+  if (elements.authMessage) elements.authMessage.textContent = message;
+  setCloudMessage(message);
+}
+
+function readAuthCredentials() {
+  const email = elements.authEmailInput.value.trim();
+  const password = elements.authPasswordInput.value;
+  if (!email) throw new Error("Enter your email address.");
+  if (!password) throw new Error("Enter your password.");
+  if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+  return { email, password };
+}
+
+function normalizeSupabaseUrl(value) {
+  const rawValue = value.trim();
+  if (!rawValue) throw new Error("Paste your Supabase Project URL.");
+
+  let parsed;
+  try {
+    parsed = new URL(rawValue);
+  } catch {
+    throw new Error("Project URL must look like https://your-project.supabase.co");
+  }
+
+  if (parsed.hostname === "supabase.com" || parsed.hostname === "app.supabase.com") {
+    throw new Error("That is a Supabase dashboard link. Use the Project URL from Project Settings > API. It should look like https://your-project.supabase.co");
+  }
+
+  if (!parsed.hostname.endsWith(".supabase.co")) {
+    throw new Error("Project URL must end with .supabase.co");
+  }
+
+  return `https://${parsed.hostname}`;
 }
 
 function allAttempts() {
@@ -119,6 +244,200 @@ function allAttempts() {
       tags: question.tags || []
     }))
   );
+}
+
+function configureSupabase(url, key) {
+  if (!url || !key) return false;
+  if (!window.supabase) {
+    setCloudMessage("Supabase library did not load. Check your internet connection and refresh.");
+    return false;
+  }
+  supabaseClient = window.supabase.createClient(url, key);
+  return true;
+}
+
+async function initializeSupabase() {
+  const config = loadSupabaseConfig();
+  elements.supabaseUrlInput.value = config.url;
+  elements.supabaseKeyInput.value = config.key;
+  if (!configureSupabase(config.url, config.key)) {
+    renderCloudStatus();
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) {
+    setCloudMessage(error.message);
+    renderCloudStatus();
+    return;
+  }
+  currentUser = data.session?.user || null;
+  cloudReady = Boolean(currentUser);
+  if (currentUser) await loadCloudData();
+  renderCloudStatus();
+}
+
+async function signIn(email, password) {
+  if (!supabaseClient) throw new Error("Save your Supabase connection first.");
+  setAuthMessage("Signing in...");
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  currentUser = data.user;
+  cloudReady = true;
+  await loadCloudData();
+  setAuthMessage("Signed in. Cloud questions loaded.");
+  renderAll();
+}
+
+async function signUp(email, password) {
+  if (!supabaseClient) throw new Error("Save your Supabase connection first.");
+  setAuthMessage("Creating account...");
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  if (error) throw error;
+  currentUser = data.session?.user || null;
+  cloudReady = Boolean(currentUser);
+  if (currentUser) await loadCloudData();
+  if (currentUser) {
+    setAuthMessage("Account created and signed in. Cloud sync is on.");
+  } else if (data.user) {
+    setAuthMessage("Account created. Check your email for a confirmation link, then come back and sign in.");
+  } else {
+    setAuthMessage("Create account request sent. Check your email, then sign in.");
+  }
+  renderAll();
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  cloudReady = false;
+  setAuthMessage("Signed out. This device is using local questions until you sign in again.");
+  renderAll();
+}
+
+function questionToDb(question) {
+  return {
+    id: question.id,
+    user_id: currentUser.id,
+    stem: question.stem,
+    choices: question.choices,
+    answer_index: question.answerIndex,
+    explanation: question.explanation,
+    tags: question.tags || [],
+    difficulty: question.difficulty || "Medium",
+    source: question.source || "",
+    flagged: Boolean(question.flagged)
+  };
+}
+
+function questionFromDb(row) {
+  return {
+    id: row.id,
+    stem: row.stem,
+    choices: row.choices || [],
+    answerIndex: row.answer_index,
+    explanation: row.explanation,
+    tags: row.tags || [],
+    difficulty: row.difficulty || "Medium",
+    source: row.source || "",
+    flagged: Boolean(row.flagged),
+    attempts: []
+  };
+}
+
+function attemptToDb(questionId, attempt) {
+  return {
+    id: attempt.id,
+    user_id: currentUser.id,
+    question_id: questionId,
+    selected_answer: attempt.selectedAnswer,
+    correct: attempt.correct,
+    created_at: new Date(attempt.timestamp).toISOString()
+  };
+}
+
+function attemptFromDb(row) {
+  return {
+    id: row.id,
+    selectedAnswer: row.selected_answer,
+    correct: Boolean(row.correct),
+    timestamp: new Date(row.created_at).getTime()
+  };
+}
+
+async function loadCloudData() {
+  if (!cloudReady) return;
+  const localBeforeCloudLoad = ensureStateShape(state);
+  if (localBeforeCloudLoad.questions.length) saveLocalSyncBackup();
+
+  const { data: questions, error: questionError } = await supabaseClient
+    .from("questions")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (questionError) throw questionError;
+
+  const { data: attempts, error: attemptError } = await supabaseClient
+    .from("attempts")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (attemptError) throw attemptError;
+
+  const byId = new Map((questions || []).map((row) => [row.id, questionFromDb(row)]));
+  (attempts || []).forEach((row) => {
+    const question = byId.get(row.question_id);
+    if (question) question.attempts.push(attemptFromDb(row));
+  });
+
+  if (!byId.size && localBeforeCloudLoad.questions.length) {
+    state = localBeforeCloudLoad;
+    saveState();
+    setCloudMessage("Supabase is empty. Your local questions are still here; click Sync local questions to Supabase.");
+    renderAll();
+    return;
+  }
+
+  state = ensureStateShape({ questions: [...byId.values()] });
+  saveState();
+  renderAll();
+}
+
+async function saveCloudQuestion(question) {
+  if (!cloudReady) return;
+  const { error } = await supabaseClient.from("questions").upsert(questionToDb(question), { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function deleteCloudQuestion(id) {
+  if (!cloudReady) return;
+  const { error } = await supabaseClient.from("questions").delete().eq("id", id);
+  if (error) throw error;
+}
+
+async function saveCloudAttempt(questionId, attempt) {
+  if (!cloudReady) return;
+  const { error } = await supabaseClient.from("attempts").upsert(attemptToDb(questionId, attempt), { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function syncLocalToCloud() {
+  if (!cloudReady) throw new Error("Sign in before syncing.");
+  let syncState = ensureStateShape(state);
+  if (!syncState.questions.length) syncState = loadLocalSyncBackup();
+  if (!syncState.questions.length) throw new Error("There are no local questions in this app location. If your questions are in the old file version, open that old app and download a backup JSON, then import it here while signed in.");
+
+  const questions = syncState.questions.map(questionToDb);
+  const { error: questionError } = await supabaseClient.from("questions").upsert(questions, { onConflict: "id" });
+  if (questionError) throw questionError;
+
+  const attempts = syncState.questions.flatMap((question) => (question.attempts || []).map((attempt) => attemptToDb(question.id, attempt)));
+  if (attempts.length) {
+    const { error: attemptError } = await supabaseClient.from("attempts").upsert(attempts, { onConflict: "id" });
+    if (attemptError) throw attemptError;
+  }
+
+  await loadCloudData();
+  setCloudMessage(`Synced ${questions.length} question${questions.length === 1 ? "" : "s"} to Supabase.`);
 }
 
 function renderDashboard() {
@@ -345,11 +664,12 @@ function renderCurrentQuestion() {
     .join("");
 }
 
-function submitCurrentAnswer() {
+async function submitCurrentAnswer() {
   if (selectedAnswer === null || answerSubmitted) return;
   const question = getCurrentQuestion();
   const correct = selectedAnswer === question.answerIndex;
   const attempt = {
+    id: crypto.randomUUID(),
     selectedAnswer,
     correct,
     timestamp: Date.now()
@@ -357,6 +677,11 @@ function submitCurrentAnswer() {
   question.attempts = [...(question.attempts || []), attempt];
   activeSession.results.push({ questionId: question.id, ...attempt });
   saveState();
+  try {
+    await saveCloudAttempt(question.id, attempt);
+  } catch (error) {
+    setCloudMessage(`Attempt saved locally, but Supabase did not save it: ${error.message}`);
+  }
   answerSubmitted = true;
   showFeedback(question, correct);
 
@@ -426,7 +751,7 @@ function getCurrentQuestion() {
   return state.questions.find((question) => question.id === activeSession.questions[activeSession.index]);
 }
 
-function importQuestions() {
+async function importQuestions() {
   elements.importMessage.textContent = "";
   try {
     const parsed = JSON.parse(elements.importInput.value);
@@ -434,9 +759,18 @@ function importQuestions() {
     const normalized = incoming.map(normalizeImportedQuestion);
     state.questions = [...normalized, ...state.questions];
     saveState();
+    if (cloudReady) {
+      const { error: questionError } = await supabaseClient.from("questions").upsert(normalized.map(questionToDb), { onConflict: "id" });
+      if (questionError) throw questionError;
+      const attempts = normalized.flatMap((question) => (question.attempts || []).map((attempt) => attemptToDb(question.id, attempt)));
+      if (attempts.length) {
+        const { error: attemptError } = await supabaseClient.from("attempts").upsert(attempts, { onConflict: "id" });
+        if (attemptError) throw attemptError;
+      }
+    }
     renderAll();
     elements.importInput.value = "";
-    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}.`;
+    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}${cloudReady ? " to Supabase" : " locally"}.`;
   } catch (error) {
     elements.importMessage.textContent = error.message;
   }
@@ -539,19 +873,25 @@ elements.questionChoices.addEventListener("click", (event) => {
   elements.submitAnswer.disabled = false;
 });
 
-elements.flagQuestion.addEventListener("click", () => {
+elements.flagQuestion.addEventListener("click", async () => {
   const question = getCurrentQuestion();
   question.flagged = !question.flagged;
   saveState();
+  try {
+    await saveCloudQuestion(question);
+  } catch (error) {
+    setCloudMessage(`Flag saved locally, but Supabase did not save it: ${error.message}`);
+  }
   renderCurrentQuestion();
   renderAll();
 });
 
-elements.questionForm.addEventListener("submit", (event) => {
+elements.questionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const formQuestion = readFormQuestion();
     const editingId = elements.editingId.value;
+    let savedQuestion;
     if (editingId) {
       const existing = state.questions.find((question) => question.id === editingId);
       const wasFlagged = existing.flagged;
@@ -561,10 +901,13 @@ elements.questionForm.addEventListener("submit", (event) => {
         flagged: wasFlagged,
         attempts: priorAttempts
       });
+      savedQuestion = existing;
     } else {
-      state.questions.unshift({ id: crypto.randomUUID(), ...formQuestion });
+      savedQuestion = { id: crypto.randomUUID(), ...formQuestion };
+      state.questions.unshift(savedQuestion);
     }
     saveState();
+    await saveCloudQuestion(savedQuestion);
     clearForm();
     renderAll();
   } catch (error) {
@@ -577,7 +920,7 @@ document.querySelector("#clearForm").addEventListener("click", clearForm);
 document.querySelector("#newQuestionButton").addEventListener("click", clearForm);
 elements.bankSearch.addEventListener("input", renderQuestionList);
 
-elements.questionList.addEventListener("click", (event) => {
+elements.questionList.addEventListener("click", async (event) => {
   const editId = event.target.dataset.edit;
   const deleteId = event.target.dataset.delete;
   if (editId) {
@@ -587,7 +930,69 @@ elements.questionList.addEventListener("click", (event) => {
   if (deleteId && confirm("Delete this question?")) {
     state.questions = state.questions.filter((question) => question.id !== deleteId);
     saveState();
+    try {
+      await deleteCloudQuestion(deleteId);
+    } catch (error) {
+      setCloudMessage(`Question deleted locally, but Supabase did not delete it: ${error.message}`);
+    }
     renderAll();
+  }
+});
+
+elements.supabaseSettingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  let url = elements.supabaseUrlInput.value.trim();
+  const key = elements.supabaseKeyInput.value.trim();
+  try {
+    if (!url || !key) throw new Error("Paste both your Supabase project URL and public anon key.");
+    url = normalizeSupabaseUrl(url);
+    elements.supabaseUrlInput.value = url;
+    saveSupabaseConfig(url, key);
+    configureSupabase(url, key);
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    currentUser = data.session?.user || null;
+    cloudReady = Boolean(currentUser);
+    if (currentUser) await loadCloudData();
+    setCloudMessage("Supabase connection saved.");
+    renderAll();
+  } catch (error) {
+    setCloudMessage(error.message);
+  }
+});
+
+elements.authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const { email, password } = readAuthCredentials();
+    await signIn(email, password);
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+});
+
+elements.signUpButton.addEventListener("click", async () => {
+  try {
+    const { email, password } = readAuthCredentials();
+    await signUp(email, password);
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+});
+
+elements.signOutButton.addEventListener("click", async () => {
+  try {
+    await signOut();
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+});
+
+elements.syncLocalButton.addEventListener("click", async () => {
+  try {
+    await syncLocalToCloud();
+  } catch (error) {
+    setCloudMessage(error.message);
   }
 });
 
@@ -613,3 +1018,4 @@ document.querySelector("#loadSample").addEventListener("click", () => {
 
 clearForm();
 renderAll();
+initializeSupabase();
