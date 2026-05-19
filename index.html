@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuestionForge Practice</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark">QF</div>
+          <div>
+            <h1>QuestionForge</h1>
+            <p>Personal question bank</p>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" aria-label="Views">
+          <button class="nav-tab active" data-view="dashboard">Dashboard</button>
+          <button class="nav-tab" data-view="practice">Practice</button>
+          <button class="nav-tab" data-view="bank">Question Bank</button>
+          <button class="nav-tab" data-view="import">Import</button>
+        </nav>
+
+        <div class="sidebar-stats">
+          <span>Total questions</span>
+          <strong id="sidebarCount">0</strong>
+        </div>
+      </aside>
+
+      <main>
+        <section class="view active" id="dashboardView">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">Study cockpit</p>
+              <h2>Practice like a real question bank.</h2>
+            </div>
+            <button class="primary-action" data-jump="practice">Start practice</button>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric">
+              <span>Accuracy</span>
+              <strong id="accuracyMetric">0%</strong>
+            </article>
+            <article class="metric">
+              <span>Answered</span>
+              <strong id="answeredMetric">0</strong>
+            </article>
+            <article class="metric">
+              <span>Flagged</span>
+              <strong id="flaggedMetric">0</strong>
+            </article>
+            <article class="metric">
+              <span>Unused</span>
+              <strong id="unusedMetric">0</strong>
+            </article>
+          </div>
+
+          <div class="dashboard-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Performance by topic</h3>
+              </div>
+              <div id="tagPerformance" class="tag-performance empty-state">Add questions to see topic-level performance.</div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Recent attempts</h3>
+              </div>
+              <div id="recentAttempts" class="attempt-list empty-state">No attempts yet.</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="practiceView">
+          <div class="page-heading compact">
+            <div>
+              <p class="eyebrow">Practice session</p>
+              <h2>Build a focused block.</h2>
+            </div>
+          </div>
+
+          <div id="sessionSetup" class="practice-setup">
+            <div class="setup-row">
+              <label>
+                Topic filter
+                <select id="topicFilter"></select>
+              </label>
+              <label>
+                Number of questions
+                <input id="questionLimit" type="number" min="1" max="50" value="10" />
+              </label>
+              <label>
+                Mode
+                <select id="practiceMode">
+                  <option value="tutor">Tutor mode</option>
+                  <option value="exam">Exam mode</option>
+                </select>
+              </label>
+              <label class="checkbox-label">
+                <input id="unusedOnly" type="checkbox" />
+                Unused only
+              </label>
+            </div>
+            <button id="beginSession" class="primary-action">Begin block</button>
+          </div>
+
+          <div id="questionStage" class="question-stage hidden">
+            <div class="question-toolbar">
+              <div>
+                <span id="sessionProgress">Question 1 of 1</span>
+                <div class="progress-track"><div id="sessionProgressBar"></div></div>
+              </div>
+              <button id="endSession" class="ghost-button">End block</button>
+            </div>
+
+            <article class="question-panel">
+              <div class="question-meta" id="questionMeta"></div>
+              <h3 id="questionStem"></h3>
+              <div id="questionChoices" class="choice-list"></div>
+              <div id="feedbackPanel" class="feedback hidden"></div>
+              <div class="question-actions">
+                <button id="flagQuestion" class="ghost-button">Flag</button>
+                <button id="submitAnswer" class="primary-action">Submit answer</button>
+                <button id="nextQuestion" class="primary-action hidden">Next question</button>
+              </div>
+            </article>
+          </div>
+
+          <div id="sessionResults" class="results-panel hidden"></div>
+        </section>
+
+        <section class="view" id="bankView">
+          <div class="page-heading compact">
+            <div>
+              <p class="eyebrow">Question bank</p>
+              <h2>Add and manage your questions.</h2>
+            </div>
+            <button id="newQuestionButton" class="primary-action">New question</button>
+          </div>
+
+          <div class="bank-layout">
+            <section class="panel question-form-panel">
+              <div class="panel-header">
+                <h3 id="formTitle">New question</h3>
+              </div>
+              <form id="questionForm">
+                <input type="hidden" id="editingId" />
+                <label>
+                  Stem
+                  <textarea id="stemInput" rows="5" required placeholder="Paste the clinical vignette or question stem."></textarea>
+                </label>
+                <div class="two-column">
+                  <label>
+                    Topic tags
+                    <input id="tagsInput" placeholder="cardiology, murmurs" />
+                  </label>
+                  <label>
+                    Difficulty
+                    <select id="difficultyInput">
+                      <option>Easy</option>
+                      <option selected>Medium</option>
+                      <option>Hard</option>
+                    </select>
+                  </label>
+                </div>
+                <fieldset>
+                  <legend>Answer choices</legend>
+                  <div id="choiceInputs"></div>
+                  <button id="addChoice" type="button" class="ghost-button">Add choice</button>
+                </fieldset>
+                <label>
+                  Explanation
+                  <textarea id="explanationInput" rows="5" required placeholder="Explain why the right answer is right and the others are wrong."></textarea>
+                </label>
+                <label>
+                  Source note
+                  <input id="sourceInput" placeholder="AI prompt, lecture, textbook chapter, etc." />
+                </label>
+                <div class="form-actions">
+                  <button type="button" id="clearForm" class="ghost-button">Clear</button>
+                  <button type="submit" class="primary-action">Save question</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Saved questions</h3>
+                <input id="bankSearch" class="search-input" placeholder="Search stems, tags, explanations" />
+              </div>
+              <div id="questionList" class="question-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="importView">
+          <div class="page-heading compact">
+            <div>
+              <p class="eyebrow">AI import</p>
+              <h2>Import questions or back up your bank.</h2>
+            </div>
+          </div>
+
+          <div class="import-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Paste JSON</h3>
+              </div>
+              <textarea id="importInput" class="import-box" spellcheck="false"></textarea>
+              <div class="form-actions">
+                <button id="loadSample" class="ghost-button">Load sample</button>
+                <button id="importQuestions" class="primary-action">Import questions</button>
+              </div>
+              <p id="importMessage" class="form-message"></p>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Backup</h3>
+              </div>
+              <p class="helper-text">Download your full question bank before moving this app, changing bookmarks, clearing browser data, or publishing it online.</p>
+              <button id="exportBackup" class="primary-action full-width-button">Download backup JSON</button>
+            </section>
+
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <h3>Expected format</h3>
+              </div>
+              <pre class="schema-example">[
+  {
+    "stem": "Question stem here",
+    "choices": ["A", "B", "C", "D"],
+    "answerIndex": 1,
+    "explanation": "Teaching explanation",
+    "tags": ["cardiology"],
+    "difficulty": "Medium",
+    "source": "AI set 2026-05-19"
+  }
+]</pre>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="choiceTemplate">
+      <div class="choice-input-row">
+        <input type="radio" name="correctChoice" aria-label="Correct answer" />
+        <input class="choice-text" placeholder="Answer choice" />
+        <button type="button" class="icon-button remove-choice" aria-label="Remove choice">x</button>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
