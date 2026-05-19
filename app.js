@@ -366,22 +366,35 @@ function attemptFromDb(row) {
   };
 }
 
+async function fetchAllRows(tableName, orderColumn = "created_at") {
+  const pageSize = 1000;
+  let from = 0;
+  const rows = [];
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabaseClient
+      .from(tableName)
+      .select("*")
+      .order(orderColumn, { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+}
+
 async function loadCloudData() {
   if (!cloudReady) return;
   const localBeforeCloudLoad = ensureStateShape(state);
   if (localBeforeCloudLoad.questions.length) saveLocalSyncBackup();
 
-  const { data: questions, error: questionError } = await supabaseClient
-    .from("questions")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (questionError) throw questionError;
-
-  const { data: attempts, error: attemptError } = await supabaseClient
-    .from("attempts")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (attemptError) throw attemptError;
+  const questions = await fetchAllRows("questions");
+  const attempts = await fetchAllRows("attempts");
 
   const byId = new Map((questions || []).map((row) => [row.id, questionFromDb(row)]));
   (attempts || []).forEach((row) => {
