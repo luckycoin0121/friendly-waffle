@@ -8,9 +8,11 @@ A no-install practice question app for personal AI-generated question banks. It 
 - Import AI-generated questions as JSON.
 - Download a backup JSON file of your full question bank and restore it later.
 - Connect Supabase so questions and practice attempts sync across devices.
-- Filter practice blocks by topic.
+- Filter practice blocks by multiple subjects and by status.
 - Use tutor mode for immediate explanations or exam mode for faster blocks.
 - Track accuracy, recent attempts, unused questions, flagged questions, and topic performance.
+- Review past test blocks from the Tests page.
+- Search by question number, question text, answer choices, correct answer, explanation, or tags.
 
 ## Run it
 
@@ -35,6 +37,8 @@ To restore later, paste that backup JSON into the Import page and click **Import
 7. Click **Sync local questions to Supabase** once to move this device's existing questions into the cloud.
 
 After that, adding questions in the app saves them to Supabase automatically.
+
+If you already ran an older version of `supabase-setup.sql`, run the updated file again. It adds saved test history and keeps your existing questions.
 
 ## Import format
 

@@ -21,6 +21,7 @@
           <button class="nav-tab active" data-view="dashboard">Dashboard</button>
           <button class="nav-tab" data-view="practice">Practice</button>
           <button class="nav-tab" data-view="bank">Question Bank</button>
+          <button class="nav-tab" data-view="tests">Tests</button>
           <button class="nav-tab" data-view="import">Import</button>
           <button class="nav-tab" data-view="settings">Settings</button>
         </nav>
@@ -90,8 +91,14 @@
           <div id="sessionSetup" class="practice-setup">
             <div class="setup-row">
               <label>
-                Topic filter
-                <select id="topicFilter"></select>
+                Status filter
+                <select id="practiceStatusFilter">
+                  <option value="all">All questions</option>
+                  <option value="incorrect">Incorrect</option>
+                  <option value="correct">Correct</option>
+                  <option value="flagged">Flagged</option>
+                  <option value="unused">Unused</option>
+                </select>
               </label>
               <label>
                 Number of questions
@@ -108,6 +115,13 @@
                 <input id="unusedOnly" type="checkbox" />
                 Unused only
               </label>
+            </div>
+            <div class="subject-picker">
+              <div class="subject-picker-header">
+                <strong>Subjects</strong>
+                <button id="clearTopics" type="button" class="ghost-button">All subjects</button>
+              </div>
+              <div id="topicFilterList" class="topic-filter-list"></div>
             </div>
             <button id="beginSession" class="primary-action">Begin block</button>
           </div>
@@ -135,6 +149,31 @@
           </div>
 
           <div id="sessionResults" class="results-panel hidden"></div>
+        </section>
+
+        <section class="view" id="testsView">
+          <div class="page-heading compact">
+            <div>
+              <p class="eyebrow">Test history</p>
+              <h2>Review previous practice blocks.</h2>
+            </div>
+          </div>
+
+          <div class="tests-layout">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Past tests</h3>
+              </div>
+              <div id="testHistoryList" class="test-history-list empty-state">No completed tests yet.</div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Review</h3>
+              </div>
+              <div id="testReviewPanel" class="empty-state">Select a test to review it.</div>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="bankView">
@@ -194,7 +233,16 @@
             <section class="panel">
               <div class="panel-header">
                 <h3>Saved questions</h3>
-                <input id="bankSearch" class="search-input" placeholder="Search stems, tags, explanations" />
+              </div>
+              <div class="bank-controls">
+                <input id="bankSearch" class="search-input" placeholder="Search question #, keywords, choices, answer, explanation" />
+                <select id="bankStatusFilter">
+                  <option value="all">All questions</option>
+                  <option value="incorrect">Incorrect</option>
+                  <option value="correct">Correct</option>
+                  <option value="flagged">Flagged</option>
+                  <option value="unused">Unused</option>
+                </select>
               </div>
               <div id="questionList" class="question-list"></div>
             </section>

@@ -42,6 +42,7 @@ let cloudReady = false;
 const views = {
   dashboard: document.querySelector("#dashboardView"),
   practice: document.querySelector("#practiceView"),
+  tests: document.querySelector("#testsView"),
   bank: document.querySelector("#bankView"),
   import: document.querySelector("#importView"),
   settings: document.querySelector("#settingsView")
@@ -55,7 +56,9 @@ const elements = {
   unusedMetric: document.querySelector("#unusedMetric"),
   tagPerformance: document.querySelector("#tagPerformance"),
   recentAttempts: document.querySelector("#recentAttempts"),
-  topicFilter: document.querySelector("#topicFilter"),
+  practiceStatusFilter: document.querySelector("#practiceStatusFilter"),
+  topicFilterList: document.querySelector("#topicFilterList"),
+  clearTopics: document.querySelector("#clearTopics"),
   questionLimit: document.querySelector("#questionLimit"),
   practiceMode: document.querySelector("#practiceMode"),
   unusedOnly: document.querySelector("#unusedOnly"),
@@ -81,6 +84,9 @@ const elements = {
   sourceInput: document.querySelector("#sourceInput"),
   questionList: document.querySelector("#questionList"),
   bankSearch: document.querySelector("#bankSearch"),
+  bankStatusFilter: document.querySelector("#bankStatusFilter"),
+  testHistoryList: document.querySelector("#testHistoryList"),
+  testReviewPanel: document.querySelector("#testReviewPanel"),
   formTitle: document.querySelector("#formTitle"),
   importInput: document.querySelector("#importInput"),
   importMessage: document.querySelector("#importMessage"),
@@ -102,16 +108,17 @@ const elements = {
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) {
-    return ensureStateShape({ questions: sampleQuestions });
+    return ensureStateShape({ questions: sampleQuestions, sessions: [] });
   }
 
   try {
     const parsed = JSON.parse(saved);
     return ensureStateShape({
-      questions: Array.isArray(parsed.questions) ? parsed.questions : sampleQuestions
+      questions: Array.isArray(parsed.questions) ? parsed.questions : sampleQuestions,
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
     });
   } catch {
-    return ensureStateShape({ questions: sampleQuestions });
+    return ensureStateShape({ questions: sampleQuestions, sessions: [] });
   }
 }
 
@@ -128,17 +135,20 @@ function saveLocalSyncBackup() {
 function loadLocalSyncBackup() {
   try {
     const parsed = JSON.parse(localStorage.getItem(LOCAL_SYNC_BACKUP_KEY) || "{}");
-    return ensureStateShape({ questions: Array.isArray(parsed.questions) ? parsed.questions : [] });
+    return ensureStateShape({
+      questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+    });
   } catch {
-    return { questions: [] };
+    return { questions: [], sessions: [] };
   }
 }
 
 function ensureStateShape(nextState) {
-  return {
-    questions: (nextState.questions || []).map((question) => ({
+  const questions = (nextState.questions || []).map((question) => ({
       ...question,
       id: question.id || crypto.randomUUID(),
+      questionNumber: Number(question.questionNumber || question.question_number || 0),
       answerIndex: Number(question.answerIndex),
       choices: Array.isArray(question.choices) ? question.choices : [],
       tags: Array.isArray(question.tags) ? question.tags : [],
@@ -149,8 +159,40 @@ function ensureStateShape(nextState) {
         correct: Boolean(attempt.correct),
         timestamp: Number(attempt.timestamp) || Date.now()
       }))
+    }));
+  assignQuestionNumbers(questions);
+
+  return {
+    questions,
+    sessions: (nextState.sessions || []).map((session) => ({
+      id: session.id || crypto.randomUUID(),
+      title: session.title || "Practice block",
+      mode: session.mode || "tutor",
+      createdAt: Number(session.createdAt || session.created_at || Date.now()),
+      questionIds: session.questionIds || session.question_ids || [],
+      results: (session.results || []).map((result) => ({
+        questionId: result.questionId || result.question_id,
+        selectedAnswer: Number(result.selectedAnswer),
+        correct: Boolean(result.correct),
+        timestamp: Number(result.timestamp) || Date.now()
+      })),
+      filters: session.filters || {}
     }))
   };
+}
+
+function assignQuestionNumbers(questions) {
+  let maxNumber = questions.reduce((max, question) => Math.max(max, Number(question.questionNumber) || 0), 0);
+  [...questions].reverse().forEach((question) => {
+    if (!question.questionNumber) {
+      maxNumber += 1;
+      question.questionNumber = maxNumber;
+    }
+  });
+}
+
+function getNextQuestionNumber() {
+  return state.questions.reduce((max, question) => Math.max(max, Number(question.questionNumber) || 0), 0) + 1;
 }
 
 function loadSupabaseConfig() {
@@ -173,6 +215,7 @@ function renderAll() {
   renderDashboard();
   renderTopicFilter();
   renderQuestionList();
+  renderTestHistory();
   renderCloudStatus();
 }
 
@@ -246,6 +289,46 @@ function allAttempts() {
       tags: question.tags || []
     }))
   );
+}
+
+function getLatestAttempt(question) {
+  return [...(question.attempts || [])].sort((a, b) => b.timestamp - a.timestamp)[0] || null;
+}
+
+function getQuestionStatus(question) {
+  if (question.flagged) return "flagged";
+  const latest = getLatestAttempt(question);
+  if (!latest) return "unused";
+  return latest.correct ? "correct" : "incorrect";
+}
+
+function questionMatchesStatus(question, status) {
+  if (status === "all") return true;
+  if (status === "flagged") return question.flagged;
+  const latest = getLatestAttempt(question);
+  if (status === "unused") return !latest;
+  if (status === "correct") return Boolean(latest?.correct);
+  if (status === "incorrect") return latest ? !latest.correct : false;
+  return true;
+}
+
+function getSelectedTopics() {
+  return [...elements.topicFilterList.querySelectorAll("input[type='checkbox']:checked")].map((input) => input.value);
+}
+
+function questionSearchText(question) {
+  const correctAnswer = question.choices[question.answerIndex] || "";
+  return [
+    `q${question.questionNumber}`,
+    String(question.questionNumber),
+    question.stem,
+    question.explanation,
+    correctAnswer,
+    ...(question.choices || []),
+    ...(question.tags || [])
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 function configureSupabase(url, key) {
@@ -368,6 +451,31 @@ function attemptFromDb(row) {
   };
 }
 
+function sessionToDb(session) {
+  return {
+    id: session.id,
+    user_id: currentUser.id,
+    title: session.title,
+    mode: session.mode,
+    question_ids: session.questionIds,
+    results: session.results,
+    filters: session.filters || {},
+    created_at: new Date(session.createdAt).toISOString()
+  };
+}
+
+function sessionFromDb(row) {
+  return {
+    id: row.id,
+    title: row.title || "Practice block",
+    mode: row.mode || "tutor",
+    questionIds: row.question_ids || [],
+    results: row.results || [],
+    filters: row.filters || {},
+    createdAt: new Date(row.created_at).getTime()
+  };
+}
+
 async function fetchAllRows(tableName, orderColumn = "created_at") {
   const pageSize = 1000;
   let from = 0;
@@ -397,6 +505,12 @@ async function loadCloudData() {
 
   const questions = await fetchAllRows("questions");
   const attempts = await fetchAllRows("attempts");
+  let sessions = [];
+  try {
+    sessions = await fetchAllRows("test_sessions");
+  } catch (error) {
+    setCloudMessage("Question sync is working. Run the updated Supabase SQL to enable saved test history.");
+  }
 
   const byId = new Map((questions || []).map((row) => [row.id, questionFromDb(row)]));
   (attempts || []).forEach((row) => {
@@ -412,7 +526,7 @@ async function loadCloudData() {
     return;
   }
 
-  state = ensureStateShape({ questions: [...byId.values()] });
+  state = ensureStateShape({ questions: [...byId.values()], sessions: sessions.map(sessionFromDb) });
   saveState();
   renderAll();
 }
@@ -435,6 +549,12 @@ async function saveCloudAttempt(questionId, attempt) {
   if (error) throw error;
 }
 
+async function saveCloudSession(session) {
+  if (!cloudReady) return;
+  const { error } = await supabaseClient.from("test_sessions").upsert(sessionToDb(session), { onConflict: "id" });
+  if (error) throw error;
+}
+
 async function syncLocalToCloud() {
   if (!cloudReady) throw new Error("Sign in before syncing.");
   let syncState = ensureStateShape(state);
@@ -449,6 +569,11 @@ async function syncLocalToCloud() {
   if (attempts.length) {
     const { error: attemptError } = await supabaseClient.from("attempts").upsert(attempts, { onConflict: "id" });
     if (attemptError) throw attemptError;
+  }
+
+  if (syncState.sessions.length) {
+    const { error: sessionError } = await supabaseClient.from("test_sessions").upsert(syncState.sessions.map(sessionToDb), { onConflict: "id" });
+    if (sessionError) setCloudMessage("Questions synced. Run the updated Supabase SQL to enable saved test history sync.");
   }
 
   await loadCloudData();
@@ -516,16 +641,85 @@ function renderRecentAttempts(attempts) {
     .join("");
 }
 
+function renderTestHistory() {
+  const sessions = [...(state.sessions || [])].sort((a, b) => b.createdAt - a.createdAt);
+  if (!sessions.length) {
+    elements.testHistoryList.className = "test-history-list empty-state";
+    elements.testHistoryList.textContent = "No completed tests yet.";
+    elements.testReviewPanel.className = "empty-state";
+    elements.testReviewPanel.textContent = "Select a test to review it.";
+    return;
+  }
+
+  elements.testHistoryList.className = "test-history-list";
+  elements.testHistoryList.innerHTML = sessions
+    .map((session) => {
+      const correct = session.results.filter((result) => result.correct).length;
+      const answered = session.results.length;
+      const score = answered ? Math.round((correct / answered) * 100) : 0;
+      return `<button class="test-history-item" data-session="${session.id}">
+        <span>${escapeHtml(new Date(session.createdAt).toLocaleString())}</span>
+        <strong>${score}%</strong>
+        <small>${answered}/${session.questionIds.length} answered - ${escapeHtml(session.mode)}</small>
+      </button>`;
+    })
+    .join("");
+}
+
+function renderTestReview(sessionId) {
+  const session = (state.sessions || []).find((item) => item.id === sessionId);
+  if (!session) return;
+  const correct = session.results.filter((result) => result.correct).length;
+  const answered = session.results.length;
+  const score = answered ? Math.round((correct / answered) * 100) : 0;
+
+  elements.testReviewPanel.className = "";
+  elements.testReviewPanel.innerHTML = `<div class="review-summary">
+      <article class="metric"><span>Score</span><strong>${score}%</strong></article>
+      <article class="metric"><span>Correct</span><strong>${correct}</strong></article>
+      <article class="metric"><span>Answered</span><strong>${answered}/${session.questionIds.length}</strong></article>
+    </div>
+    <div class="review-list">
+      ${session.questionIds
+        .map((questionId) => {
+          const question = state.questions.find((item) => item.id === questionId);
+          if (!question) return "";
+          const result = session.results.find((item) => item.questionId === questionId);
+          const selected = result ? question.choices[result.selectedAnswer] || "No answer" : "No answer";
+          return `<article class="review-item">
+            <strong class="${result?.correct ? "good-text" : "bad-text"}">${result?.correct ? "Correct" : "Missed or unanswered"}</strong>
+            <p><b>Q${question.questionNumber}</b> ${escapeHtml(question.stem)}</p>
+            <p><b>Your answer:</b> ${escapeHtml(selected)}</p>
+            <p><b>Correct answer:</b> ${escapeHtml(question.choices[question.answerIndex])}</p>
+            <p>${escapeHtml(question.explanation)}</p>
+          </article>`;
+        })
+        .join("")}
+    </div>`;
+}
+
 function renderTopicFilter() {
   const tags = [...new Set(state.questions.flatMap((question) => question.tags || []))].sort();
-  elements.topicFilter.innerHTML = `<option value="all">All topics</option>${tags.map((tag) => `<option value="${escapeAttribute(tag)}">${escapeHtml(tag)}</option>`).join("")}`;
+  const selected = new Set(getSelectedTopics());
+  if (!tags.length) {
+    elements.topicFilterList.innerHTML = `<div class="empty-state">No subjects yet.</div>`;
+    return;
+  }
+  elements.topicFilterList.innerHTML = tags
+    .map(
+      (tag) => `<label class="topic-check">
+        <input type="checkbox" value="${escapeAttribute(tag)}" ${selected.has(tag) ? "checked" : ""} />
+        <span>${escapeHtml(tag)}</span>
+      </label>`
+    )
+    .join("");
 }
 
 function renderQuestionList() {
   const query = elements.bankSearch.value.trim().toLowerCase();
+  const status = elements.bankStatusFilter.value;
   const questions = state.questions.filter((question) => {
-    const haystack = [question.stem, question.explanation, ...(question.tags || [])].join(" ").toLowerCase();
-    return haystack.includes(query);
+    return questionMatchesStatus(question, status) && questionSearchText(question).includes(query);
   });
 
   if (!questions.length) {
@@ -539,8 +733,9 @@ function renderQuestionList() {
       const correct = attempts.filter((attempt) => attempt.correct).length;
       const accuracy = attempts.length ? `${Math.round((correct / attempts.length) * 100)}%` : "Unused";
       return `<article class="bank-item">
-        <h4>${escapeHtml(truncate(question.stem, 130))}</h4>
+        <h4><span class="question-number">Q${question.questionNumber}</span>${escapeHtml(truncate(question.stem, 130))}</h4>
         <div class="question-meta">
+          <span class="pill">${escapeHtml(getQuestionStatus(question))}</span>
           ${(question.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
           <span class="pill">${escapeHtml(question.difficulty || "Medium")}</span>
           ${question.flagged ? `<span class="pill">Flagged</span>` : ""}
@@ -625,11 +820,13 @@ function readFormQuestion() {
 }
 
 function startSession() {
-  const topic = elements.topicFilter.value;
+  const topics = getSelectedTopics();
+  const status = elements.practiceStatusFilter.value;
   const limit = Math.max(1, Number(elements.questionLimit.value) || 10);
   const unusedOnly = elements.unusedOnly.checked;
   let pool = [...state.questions];
-  if (topic !== "all") pool = pool.filter((question) => (question.tags || []).includes(topic));
+  if (topics.length) pool = pool.filter((question) => topics.some((topic) => (question.tags || []).includes(topic)));
+  if (status !== "all") pool = pool.filter((question) => questionMatchesStatus(question, status));
   if (unusedOnly) pool = pool.filter((question) => !(question.attempts || []).length);
 
   pool = shuffle(pool).slice(0, limit);
@@ -640,10 +837,13 @@ function startSession() {
   }
 
   activeSession = {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
     mode: elements.practiceMode.value,
     questions: pool.map((question) => question.id),
     index: 0,
-    results: []
+    results: [],
+    filters: { topics, status, unusedOnly }
   };
   selectedAnswer = null;
   answerSubmitted = false;
@@ -660,7 +860,7 @@ function renderCurrentQuestion() {
   answerSubmitted = false;
   elements.sessionProgress.textContent = `Question ${index + 1} of ${activeSession.questions.length}`;
   elements.sessionProgressBar.style.width = `${((index + 1) / activeSession.questions.length) * 100}%`;
-  elements.questionMeta.innerHTML = `${(question.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}<span class="pill">${escapeHtml(question.difficulty || "Medium")}</span>`;
+  elements.questionMeta.innerHTML = `<span class="pill">Q${question.questionNumber}</span>${(question.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}<span class="pill">${escapeHtml(question.difficulty || "Medium")}</span>`;
   elements.questionStem.textContent = question.stem;
   elements.feedbackPanel.className = "feedback hidden";
   elements.feedbackPanel.textContent = "";
@@ -729,13 +929,32 @@ function moveNextOrFinish() {
   }
 }
 
-function finishSession() {
+async function finishSession() {
   if (!activeSession) return;
   const results = activeSession.results;
   const total = activeSession.questions.length;
   const correct = results.filter((result) => result.correct).length;
   const answered = results.length;
   const pct = answered ? Math.round((correct / answered) * 100) : 0;
+  const completedSession = {
+    id: activeSession.id,
+    title: `Practice block ${new Date(activeSession.createdAt).toLocaleDateString()}`,
+    mode: activeSession.mode,
+    createdAt: activeSession.createdAt,
+    questionIds: activeSession.questions,
+    results: activeSession.results,
+    filters: activeSession.filters || {}
+  };
+
+  if (answered || total) {
+    state.sessions = [completedSession, ...(state.sessions || []).filter((session) => session.id !== completedSession.id)];
+    saveState();
+    try {
+      await saveCloudSession(completedSession);
+    } catch (error) {
+      setCloudMessage(`Test saved locally. Run the updated Supabase SQL if cloud test history does not save: ${error.message}`);
+    }
+  }
 
   elements.questionStage.classList.add("hidden");
   elements.sessionSetup.classList.remove("hidden");
@@ -752,7 +971,7 @@ function finishSession() {
         const question = state.questions.find((item) => item.id === result.questionId);
         return `<div class="review-item">
           <strong>${result.correct ? "Correct" : "Missed"}</strong>
-          <p>${escapeHtml(truncate(question.stem, 180))}</p>
+          <p><b>Q${question.questionNumber}</b> ${escapeHtml(truncate(question.stem, 180))}</p>
           <p><b>Your answer:</b> ${escapeHtml(question.choices[result.selectedAnswer] || "No answer")}</p>
           <p><b>Correct answer:</b> ${escapeHtml(question.choices[question.answerIndex])}</p>
         </div>`;
@@ -772,7 +991,9 @@ async function importQuestions() {
     const parsed = JSON.parse(elements.importInput.value);
     const incoming = Array.isArray(parsed) ? parsed : parsed.questions || [parsed];
     const normalized = incoming.map(normalizeImportedQuestion);
+    const importedSessions = Array.isArray(parsed.sessions) ? ensureStateShape({ questions: [], sessions: parsed.sessions }).sessions : [];
     state.questions = [...normalized, ...state.questions];
+    state.sessions = [...importedSessions, ...(state.sessions || [])];
     saveState();
     if (cloudReady) {
       const { error: questionError } = await supabaseClient.from("questions").upsert(normalized.map(questionToDb), { onConflict: "id" });
@@ -782,10 +1003,14 @@ async function importQuestions() {
         const { error: attemptError } = await supabaseClient.from("attempts").upsert(attempts, { onConflict: "id" });
         if (attemptError) throw attemptError;
       }
+      if (importedSessions.length) {
+        const { error: sessionError } = await supabaseClient.from("test_sessions").upsert(importedSessions.map(sessionToDb), { onConflict: "id" });
+        if (sessionError) setCloudMessage("Questions imported. Run the updated Supabase SQL to enable saved test history sync.");
+      }
     }
     renderAll();
     elements.importInput.value = "";
-    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}${cloudReady ? " to Supabase" : " locally"}.`;
+    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}${importedSessions.length ? ` and ${importedSessions.length} test${importedSessions.length === 1 ? "" : "s"}` : ""}${cloudReady ? " to Supabase" : " locally"}.`;
   } catch (error) {
     elements.importMessage.textContent = error.message;
   }
@@ -795,7 +1020,8 @@ function exportBackup() {
   const backup = {
     app: "QuestionForge",
     exportedAt: new Date().toISOString(),
-    questions: state.questions
+    questions: state.questions,
+    sessions: state.sessions || []
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -934,6 +1160,19 @@ document.querySelector("#addChoice").addEventListener("click", () => addChoiceIn
 document.querySelector("#clearForm").addEventListener("click", clearForm);
 document.querySelector("#newQuestionButton").addEventListener("click", clearForm);
 elements.bankSearch.addEventListener("input", renderQuestionList);
+elements.bankStatusFilter.addEventListener("change", renderQuestionList);
+elements.topicFilterList.addEventListener("change", () => {});
+elements.clearTopics.addEventListener("click", () => {
+  elements.topicFilterList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = false;
+  });
+});
+
+elements.testHistoryList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-session]");
+  if (!button) return;
+  renderTestReview(button.dataset.session);
+});
 
 elements.questionList.addEventListener("click", async (event) => {
   const editId = event.target.dataset.edit;
