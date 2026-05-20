@@ -1,6 +1,8 @@
 const STORAGE_KEY = "questionforge-state-v1";
 const SUPABASE_CONFIG_KEY = "questionforge-supabase-config-v1";
 const LOCAL_SYNC_BACKUP_KEY = "questionforge-local-sync-backup-v1";
+const DEFAULT_SUPABASE_URL = "https://nardxqdhsirmadkqfiys.supabase.co";
+const DEFAULT_SUPABASE_KEY = "sb_publishable_jUmQlZ9N6UjvWXEbA65tMQ_-7qNovuN";
 
 const sampleQuestions = [
   {
@@ -155,11 +157,11 @@ function loadSupabaseConfig() {
   try {
     const config = JSON.parse(localStorage.getItem(SUPABASE_CONFIG_KEY) || "{}");
     return {
-      url: config.url || "",
-      key: config.key || ""
+      url: config.url || DEFAULT_SUPABASE_URL,
+      key: config.key || DEFAULT_SUPABASE_KEY
     };
   } catch {
-    return { url: "", key: "" };
+    return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY };
   }
 }
 
