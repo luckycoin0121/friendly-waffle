@@ -545,6 +545,28 @@ textarea {
   margin-bottom: 16px;
 }
 
+.test-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.test-review-header div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.test-review-header small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .review-item {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -789,7 +811,8 @@ legend {
   }
 
   .question-toolbar,
-  .bank-item-footer {
+  .bank-item-footer,
+  .test-review-header {
     align-items: stretch;
     flex-direction: column;
   }

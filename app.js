@@ -331,6 +331,10 @@ function questionSearchText(question) {
     .toLowerCase();
 }
 
+function getTestDisplayId(session) {
+  return `T-${String(session.id).slice(0, 8).toUpperCase()}`;
+}
+
 function configureSupabase(url, key) {
   if (!url || !key) return false;
   if (!window.supabase) {
@@ -658,8 +662,9 @@ function renderTestHistory() {
       const answered = session.results.length;
       const score = answered ? Math.round((correct / answered) * 100) : 0;
       return `<button class="test-history-item" data-session="${session.id}">
-        <span>${escapeHtml(new Date(session.createdAt).toLocaleString())}</span>
+        <span>${escapeHtml(getTestDisplayId(session))}</span>
         <strong>${score}%</strong>
+        <small>${escapeHtml(new Date(session.createdAt).toLocaleString())}</small>
         <small>${answered}/${session.questionIds.length} answered - ${escapeHtml(session.mode)}</small>
       </button>`;
     })
@@ -674,7 +679,14 @@ function renderTestReview(sessionId) {
   const score = answered ? Math.round((correct / answered) * 100) : 0;
 
   elements.testReviewPanel.className = "";
-  elements.testReviewPanel.innerHTML = `<div class="review-summary">
+  elements.testReviewPanel.innerHTML = `<div class="test-review-header">
+      <div>
+        <strong>${escapeHtml(getTestDisplayId(session))}</strong>
+        <small>${escapeHtml(session.id)}</small>
+      </div>
+      <button class="primary-action" data-retake="${session.id}">Retake test</button>
+    </div>
+    <div class="review-summary">
       <article class="metric"><span>Score</span><strong>${score}%</strong></article>
       <article class="metric"><span>Correct</span><strong>${correct}</strong></article>
       <article class="metric"><span>Answered</span><strong>${answered}/${session.questionIds.length}</strong></article>
@@ -853,6 +865,33 @@ function startSession() {
   renderCurrentQuestion();
 }
 
+function retakeSession(sessionId) {
+  const session = (state.sessions || []).find((item) => item.id === sessionId);
+  if (!session) return;
+  const questionIds = session.questionIds.filter((id) => state.questions.some((question) => question.id === id));
+  if (!questionIds.length) {
+    elements.testReviewPanel.innerHTML = `<div class="empty-state">None of the questions from this test are available anymore.</div>`;
+    return;
+  }
+
+  activeSession = {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    mode: session.mode || "tutor",
+    questions: questionIds,
+    index: 0,
+    results: [],
+    filters: { ...(session.filters || {}), retakeOf: session.id }
+  };
+  selectedAnswer = null;
+  answerSubmitted = false;
+  switchView("practice");
+  elements.sessionSetup.classList.add("hidden");
+  elements.sessionResults.classList.add("hidden");
+  elements.questionStage.classList.remove("hidden");
+  renderCurrentQuestion();
+}
+
 function renderCurrentQuestion() {
   const question = getCurrentQuestion();
   const index = activeSession.index;
@@ -938,7 +977,7 @@ async function finishSession() {
   const pct = answered ? Math.round((correct / answered) * 100) : 0;
   const completedSession = {
     id: activeSession.id,
-    title: `Practice block ${new Date(activeSession.createdAt).toLocaleDateString()}`,
+    title: activeSession.filters?.retakeOf ? `Retake ${getTestDisplayId({ id: activeSession.filters.retakeOf })}` : `Practice block ${new Date(activeSession.createdAt).toLocaleDateString()}`,
     mode: activeSession.mode,
     createdAt: activeSession.createdAt,
     questionIds: activeSession.questions,
@@ -1172,6 +1211,12 @@ elements.testHistoryList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-session]");
   if (!button) return;
   renderTestReview(button.dataset.session);
+});
+
+elements.testReviewPanel.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-retake]");
+  if (!button) return;
+  retakeSession(button.dataset.retake);
 });
 
 elements.questionList.addEventListener("click", async (event) => {
