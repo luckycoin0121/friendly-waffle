@@ -358,6 +358,21 @@
               <button id="syncLocalButton" class="primary-action">Sync local questions to Supabase</button>
               <p id="cloudMessage" class="form-message"></p>
             </section>
+
+            <section class="panel wide-panel danger-panel">
+              <div class="panel-header">
+                <h3>Delete all questions</h3>
+              </div>
+              <p class="helper-text">This permanently deletes every saved question, attempt, and test history item in this app. If you are signed in, it also deletes them from Supabase.</p>
+              <label>
+                Type DELETE ALL to confirm
+                <input id="deleteAllConfirmInput" placeholder="DELETE ALL" />
+              </label>
+              <div class="form-actions">
+                <button id="deleteAllQuestionsButton" class="danger-action">Delete all saved questions</button>
+              </div>
+              <p id="deleteAllMessage" class="form-message"></p>
+            </section>
           </div>
         </section>
       </main>

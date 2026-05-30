@@ -102,7 +102,10 @@ const elements = {
   signUpButton: document.querySelector("#signUpButton"),
   signOutButton: document.querySelector("#signOutButton"),
   syncLocalButton: document.querySelector("#syncLocalButton"),
-  cloudMessage: document.querySelector("#cloudMessage")
+  cloudMessage: document.querySelector("#cloudMessage"),
+  deleteAllConfirmInput: document.querySelector("#deleteAllConfirmInput"),
+  deleteAllQuestionsButton: document.querySelector("#deleteAllQuestionsButton"),
+  deleteAllMessage: document.querySelector("#deleteAllMessage")
 };
 
 function loadState() {
@@ -547,6 +550,19 @@ async function deleteCloudQuestion(id) {
   if (error) throw error;
 }
 
+async function deleteAllCloudData() {
+  if (!cloudReady || !currentUser) return;
+
+  const { error: sessionError } = await supabaseClient.from("test_sessions").delete().eq("user_id", currentUser.id);
+  if (sessionError && sessionError.code !== "42P01") throw sessionError;
+
+  const { error: attemptError } = await supabaseClient.from("attempts").delete().eq("user_id", currentUser.id);
+  if (attemptError) throw attemptError;
+
+  const { error: questionError } = await supabaseClient.from("questions").delete().eq("user_id", currentUser.id);
+  if (questionError) throw questionError;
+}
+
 async function saveCloudAttempt(questionId, attempt) {
   if (!cloudReady) return;
   const { error } = await supabaseClient.from("attempts").upsert(attemptToDb(questionId, attempt), { onConflict: "id" });
@@ -582,6 +598,42 @@ async function syncLocalToCloud() {
 
   await loadCloudData();
   setCloudMessage(`Synced ${questions.length} question${questions.length === 1 ? "" : "s"} to Supabase.`);
+}
+
+async function deleteAllSavedQuestions() {
+  const confirmation = elements.deleteAllConfirmInput.value.trim();
+  if (confirmation !== "DELETE ALL") {
+    elements.deleteAllMessage.textContent = "Type DELETE ALL exactly before deleting.";
+    return;
+  }
+
+  if (!confirm("Permanently delete all saved questions, attempts, and test history?")) return;
+
+  elements.deleteAllQuestionsButton.disabled = true;
+  elements.deleteAllMessage.textContent = "Deleting...";
+
+  try {
+    await deleteAllCloudData();
+    state = ensureStateShape({ questions: [], sessions: [] });
+    activeSession = null;
+    selectedAnswer = null;
+    answerSubmitted = false;
+    localStorage.removeItem(LOCAL_SYNC_BACKUP_KEY);
+    saveState();
+    clearForm();
+    elements.questionStage.classList.add("hidden");
+    elements.sessionSetup.classList.remove("hidden");
+    elements.sessionResults.classList.add("hidden");
+    elements.testReviewPanel.className = "empty-state";
+    elements.testReviewPanel.textContent = "Select a test to review it.";
+    elements.deleteAllConfirmInput.value = "";
+    elements.deleteAllMessage.textContent = "All saved questions have been deleted.";
+    renderAll();
+  } catch (error) {
+    elements.deleteAllMessage.textContent = `Delete failed: ${error.message}`;
+  } finally {
+    elements.deleteAllQuestionsButton.disabled = false;
+  }
 }
 
 function renderDashboard() {
@@ -1294,6 +1346,8 @@ elements.syncLocalButton.addEventListener("click", async () => {
     setCloudMessage(error.message);
   }
 });
+
+elements.deleteAllQuestionsButton.addEventListener("click", deleteAllSavedQuestions);
 
 document.querySelector("#importQuestions").addEventListener("click", importQuestions);
 elements.exportBackup.addEventListener("click", exportBackup);
