@@ -554,13 +554,18 @@ async function deleteAllCloudData() {
   if (!cloudReady || !currentUser) return;
 
   const { error: sessionError } = await supabaseClient.from("test_sessions").delete().eq("user_id", currentUser.id);
-  if (sessionError && sessionError.code !== "42P01") throw sessionError;
+  if (sessionError && !isMissingTableError(sessionError)) throw sessionError;
 
   const { error: attemptError } = await supabaseClient.from("attempts").delete().eq("user_id", currentUser.id);
   if (attemptError) throw attemptError;
 
   const { error: questionError } = await supabaseClient.from("questions").delete().eq("user_id", currentUser.id);
   if (questionError) throw questionError;
+}
+
+function isMissingTableError(error) {
+  const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+  return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("could not find the table");
 }
 
 async function saveCloudAttempt(questionId, attempt) {
