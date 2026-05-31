@@ -127,12 +127,32 @@ function loadState() {
 
 function saveState() {
   state = ensureStateShape(state);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (cloudReady && currentUser) {
+    localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    if (!isStorageQuotaError(error)) throw error;
+    localStorage.removeItem(LOCAL_SYNC_BACKUP_KEY);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ questions: [], sessions: [] }));
+  }
 }
 
 function saveLocalSyncBackup() {
+  if (cloudReady && currentUser) return;
   if (!state.questions.length) return;
-  localStorage.setItem(LOCAL_SYNC_BACKUP_KEY, JSON.stringify(ensureStateShape(state)));
+  try {
+    localStorage.setItem(LOCAL_SYNC_BACKUP_KEY, JSON.stringify(ensureStateShape(state)));
+  } catch (error) {
+    if (!isStorageQuotaError(error)) throw error;
+    localStorage.removeItem(LOCAL_SYNC_BACKUP_KEY);
+  }
+}
+
+function isStorageQuotaError(error) {
+  return error?.name === "QuotaExceededError" || error?.code === 22 || String(error?.message || "").toLowerCase().includes("quota");
 }
 
 function loadLocalSyncBackup() {
