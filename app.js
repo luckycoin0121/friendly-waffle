@@ -85,6 +85,10 @@ const elements = {
   questionList: document.querySelector("#questionList"),
   bankSearch: document.querySelector("#bankSearch"),
   bankStatusFilter: document.querySelector("#bankStatusFilter"),
+  bulkDeleteRangeInput: document.querySelector("#bulkDeleteRangeInput"),
+  bulkDeleteMessage: document.querySelector("#bulkDeleteMessage"),
+  previewBulkDeleteButton: document.querySelector("#previewBulkDeleteButton"),
+  bulkDeleteQuestionsButton: document.querySelector("#bulkDeleteQuestionsButton"),
   testHistoryList: document.querySelector("#testHistoryList"),
   testReviewPanel: document.querySelector("#testReviewPanel"),
   formTitle: document.querySelector("#formTitle"),
@@ -570,6 +574,30 @@ async function deleteCloudQuestion(id) {
   if (error) throw error;
 }
 
+async function deleteCloudQuestions(ids) {
+  if (!cloudReady || !ids.length) return;
+  for (const chunk of chunkArray(ids, 100)) {
+    const { error } = await supabaseClient.from("questions").delete().in("id", chunk);
+    if (error) throw error;
+  }
+}
+
+async function deleteCloudSessions(ids) {
+  if (!cloudReady || !ids.length) return;
+  for (const chunk of chunkArray(ids, 100)) {
+    const { error } = await supabaseClient.from("test_sessions").delete().in("id", chunk);
+    if (error && !isMissingTableError(error)) throw error;
+  }
+}
+
+async function saveCloudSessions(sessions) {
+  if (!cloudReady || !sessions.length) return;
+  for (const chunk of chunkArray(sessions, 100)) {
+    const { error } = await supabaseClient.from("test_sessions").upsert(chunk.map(sessionToDb), { onConflict: "id" });
+    if (error && !isMissingTableError(error)) throw error;
+  }
+}
+
 async function deleteAllCloudData() {
   if (!cloudReady || !currentUser) return;
 
@@ -586,6 +614,14 @@ async function deleteAllCloudData() {
 function isMissingTableError(error) {
   const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
   return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("could not find the table");
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 async function saveCloudAttempt(questionId, attempt) {
@@ -658,6 +694,115 @@ async function deleteAllSavedQuestions() {
     elements.deleteAllMessage.textContent = `Delete failed: ${error.message}`;
   } finally {
     elements.deleteAllQuestionsButton.disabled = false;
+  }
+}
+
+function parseQuestionNumberSelection(value) {
+  const normalized = value
+    .replaceAll("Q", "")
+    .replaceAll("q", "")
+    .replaceAll(" ", "");
+  if (!normalized) return [];
+
+  const numbers = new Set();
+  for (const part of normalized.split(",").filter(Boolean)) {
+    const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) throw new Error("Question ranges must use whole numbers.");
+      const low = Math.min(start, end);
+      const high = Math.max(start, end);
+      if (high - low > 1000) throw new Error("Please delete 1000 or fewer question numbers at a time.");
+      for (let number = low; number <= high; number += 1) numbers.add(number);
+      continue;
+    }
+
+    if (!/^\d+$/.test(part)) throw new Error(`Could not understand "${part}". Use numbers or ranges like 2034-2083.`);
+    numbers.add(Number(part));
+  }
+
+  return [...numbers].sort((a, b) => a - b);
+}
+
+function getQuestionsForNumberSelection() {
+  const selectedNumbers = parseQuestionNumberSelection(elements.bulkDeleteRangeInput.value);
+  const selectedSet = new Set(selectedNumbers);
+  const matches = state.questions
+    .filter((question) => selectedSet.has(Number(question.questionNumber)))
+    .sort((a, b) => a.questionNumber - b.questionNumber);
+  return { selectedNumbers, matches };
+}
+
+function previewBulkDeleteQuestions() {
+  try {
+    const { selectedNumbers, matches } = getQuestionsForNumberSelection();
+    if (!selectedNumbers.length) {
+      elements.bulkDeleteMessage.textContent = "Enter question numbers or ranges to preview.";
+      return;
+    }
+    if (!matches.length) {
+      elements.bulkDeleteMessage.textContent = `No saved questions match ${selectedNumbers.length} selected number${selectedNumbers.length === 1 ? "" : "s"}.`;
+      return;
+    }
+
+    const first = matches[0].questionNumber;
+    const last = matches[matches.length - 1].questionNumber;
+    elements.bulkDeleteMessage.textContent = `Matched ${matches.length} question${matches.length === 1 ? "" : "s"}: Q${first}${matches.length > 1 ? ` through Q${last}` : ""}.`;
+  } catch (error) {
+    elements.bulkDeleteMessage.textContent = error.message;
+  }
+}
+
+async function deleteBulkSelectedQuestions() {
+  let matches;
+  try {
+    ({ matches } = getQuestionsForNumberSelection());
+  } catch (error) {
+    elements.bulkDeleteMessage.textContent = error.message;
+    return;
+  }
+
+  if (!matches.length) {
+    elements.bulkDeleteMessage.textContent = "No matching questions to delete.";
+    return;
+  }
+
+  const preview = matches.slice(0, 3).map((question) => `Q${question.questionNumber}`).join(", ");
+  if (!confirm(`Delete ${matches.length} question${matches.length === 1 ? "" : "s"} (${preview}${matches.length > 3 ? ", ..." : ""})?`)) return;
+
+  elements.bulkDeleteQuestionsButton.disabled = true;
+  elements.bulkDeleteMessage.textContent = "Deleting matched questions...";
+
+  const idsToDelete = new Set(matches.map((question) => question.id));
+  const originalSessions = state.sessions || [];
+  const updatedSessions = [];
+  const deletedSessionIds = [];
+
+  originalSessions.forEach((session) => {
+    const results = (session.results || []).filter((result) => !idsToDelete.has(result.questionId));
+    const questionIds = (session.questionIds || []).filter((id) => !idsToDelete.has(id));
+    if (!questionIds.length) {
+      deletedSessionIds.push(session.id);
+      return;
+    }
+    updatedSessions.push({ ...session, questionIds, results });
+  });
+
+  try {
+    await deleteCloudQuestions([...idsToDelete]);
+    await deleteCloudSessions(deletedSessionIds);
+    await saveCloudSessions(updatedSessions);
+    state.questions = state.questions.filter((question) => !idsToDelete.has(question.id));
+    state.sessions = updatedSessions;
+    saveState();
+    elements.bulkDeleteRangeInput.value = "";
+    elements.bulkDeleteMessage.textContent = `Deleted ${idsToDelete.size} question${idsToDelete.size === 1 ? "" : "s"}.`;
+    renderAll();
+  } catch (error) {
+    elements.bulkDeleteMessage.textContent = `Delete failed: ${error.message}`;
+  } finally {
+    elements.bulkDeleteQuestionsButton.disabled = false;
   }
 }
 
@@ -1277,6 +1422,11 @@ document.querySelector("#clearForm").addEventListener("click", clearForm);
 document.querySelector("#newQuestionButton").addEventListener("click", clearForm);
 elements.bankSearch.addEventListener("input", renderQuestionList);
 elements.bankStatusFilter.addEventListener("change", renderQuestionList);
+elements.previewBulkDeleteButton.addEventListener("click", previewBulkDeleteQuestions);
+elements.bulkDeleteQuestionsButton.addEventListener("click", deleteBulkSelectedQuestions);
+elements.bulkDeleteRangeInput.addEventListener("input", () => {
+  elements.bulkDeleteMessage.textContent = "Preview a range before deleting.";
+});
 elements.topicFilterList.addEventListener("change", () => {});
 elements.clearTopics.addEventListener("click", () => {
   elements.topicFilterList.querySelectorAll("input[type='checkbox']").forEach((input) => {

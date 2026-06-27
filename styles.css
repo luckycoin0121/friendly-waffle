@@ -660,6 +660,24 @@ legend {
   margin-bottom: 14px;
 }
 
+.bulk-delete-box {
+  border: 1px solid #e3a8a8;
+  background: #fff8f8;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.bulk-delete-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .question-list {
   display: grid;
   gap: 12px;
@@ -815,8 +833,14 @@ legend {
   }
 
   .bank-controls,
+  .bulk-delete-box,
   .review-summary {
     grid-template-columns: 1fr;
+  }
+
+  .bulk-delete-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .page-heading {

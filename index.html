@@ -244,6 +244,19 @@
                   <option value="unused">Unused</option>
                 </select>
               </div>
+              <div class="bulk-delete-box">
+                <div>
+                  <label>
+                    Delete by question number
+                    <input id="bulkDeleteRangeInput" placeholder="Example: 2034-2083, 2101, Q2110-Q2115" />
+                  </label>
+                  <p id="bulkDeleteMessage" class="form-message">Preview a range before deleting.</p>
+                </div>
+                <div class="bulk-delete-actions">
+                  <button id="previewBulkDeleteButton" class="ghost-button">Preview</button>
+                  <button id="bulkDeleteQuestionsButton" class="danger-action">Delete matched questions</button>
+                </div>
+              </div>
               <div id="questionList" class="question-list"></div>
             </section>
           </div>
