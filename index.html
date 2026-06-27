@@ -126,13 +126,23 @@
             <button id="beginSession" class="primary-action">Begin block</button>
           </div>
 
+          <section id="pausedSessionsPanel" class="panel paused-sessions-panel hidden">
+            <div class="panel-header">
+              <h3>Paused tests</h3>
+            </div>
+            <div id="pausedSessionsList" class="paused-sessions-list"></div>
+          </section>
+
           <div id="questionStage" class="question-stage hidden">
             <div class="question-toolbar">
               <div>
                 <span id="sessionProgress">Question 1 of 1</span>
                 <div class="progress-track"><div id="sessionProgressBar"></div></div>
               </div>
-              <button id="endSession" class="ghost-button">End block</button>
+              <div class="button-row">
+                <button id="pauseSession" class="ghost-button">Pause block</button>
+                <button id="endSession" class="ghost-button">End block</button>
+              </div>
             </div>
 
             <article class="question-panel">

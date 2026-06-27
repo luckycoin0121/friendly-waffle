@@ -71,6 +71,9 @@ const elements = {
   sessionResults: document.querySelector("#sessionResults"),
   sessionProgress: document.querySelector("#sessionProgress"),
   sessionProgressBar: document.querySelector("#sessionProgressBar"),
+  pauseSession: document.querySelector("#pauseSession"),
+  pausedSessionsPanel: document.querySelector("#pausedSessionsPanel"),
+  pausedSessionsList: document.querySelector("#pausedSessionsList"),
   questionMeta: document.querySelector("#questionMeta"),
   questionStem: document.querySelector("#questionStem"),
   questionChoices: document.querySelector("#questionChoices"),
@@ -128,7 +131,8 @@ function loadState() {
     const parsed = JSON.parse(saved);
     return ensureStateShape({
       questions: Array.isArray(parsed.questions) ? parsed.questions : sampleQuestions,
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      pausedSessions: Array.isArray(parsed.pausedSessions) ? parsed.pausedSessions : []
     });
   } catch {
     return ensureStateShape({ questions: sampleQuestions, sessions: [] });
@@ -138,7 +142,12 @@ function loadState() {
 function saveState() {
   state = ensureStateShape(state);
   if (cloudReady && currentUser) {
-    localStorage.removeItem(STORAGE_KEY);
+    const lightweightState = ensureStateShape({
+      questions: [],
+      sessions: state.sessions || [],
+      pausedSessions: state.pausedSessions || []
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweightState));
     return;
   }
   try {
@@ -146,7 +155,7 @@ function saveState() {
   } catch (error) {
     if (!isStorageQuotaError(error)) throw error;
     localStorage.removeItem(LOCAL_SYNC_BACKUP_KEY);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ questions: [], sessions: [] }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ questions: [], sessions: [], pausedSessions: state.pausedSessions || [] }));
   }
 }
 
@@ -170,10 +179,11 @@ function loadLocalSyncBackup() {
     const parsed = JSON.parse(localStorage.getItem(LOCAL_SYNC_BACKUP_KEY) || "{}");
     return ensureStateShape({
       questions: Array.isArray(parsed.questions) ? parsed.questions : [],
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      pausedSessions: Array.isArray(parsed.pausedSessions) ? parsed.pausedSessions : []
     });
   } catch {
-    return { questions: [], sessions: [] };
+    return { questions: [], sessions: [], pausedSessions: [] };
   }
 }
 
@@ -203,6 +213,21 @@ function ensureStateShape(nextState) {
       mode: session.mode || "tutor",
       createdAt: Number(session.createdAt || session.created_at || Date.now()),
       questionIds: session.questionIds || session.question_ids || [],
+      results: (session.results || []).map((result) => ({
+        questionId: result.questionId || result.question_id,
+        selectedAnswer: Number(result.selectedAnswer),
+        correct: Boolean(result.correct),
+        timestamp: Number(result.timestamp) || Date.now()
+      })),
+      filters: session.filters || {}
+    })),
+    pausedSessions: (nextState.pausedSessions || []).map((session) => ({
+      id: session.id || crypto.randomUUID(),
+      createdAt: Number(session.createdAt || session.created_at || Date.now()),
+      pausedAt: Number(session.pausedAt || session.paused_at || Date.now()),
+      mode: session.mode || "tutor",
+      questions: session.questions || session.questionIds || session.question_ids || [],
+      index: Math.max(0, Number(session.index) || 0),
       results: (session.results || []).map((result) => ({
         questionId: result.questionId || result.question_id,
         selectedAnswer: Number(result.selectedAnswer),
@@ -281,6 +306,7 @@ function renderAll() {
   renderTopicFilter();
   renderQuestionList();
   renderTestHistory();
+  renderPausedSessions();
   renderCloudStatus();
 }
 
@@ -653,7 +679,11 @@ async function loadCloudData() {
     return;
   }
 
-  state = ensureStateShape({ questions: [...byId.values()], sessions: sessions.map(sessionFromDb) });
+  state = ensureStateShape({
+    questions: [...byId.values()],
+    sessions: sessions.map(sessionFromDb),
+    pausedSessions: localBeforeCloudLoad.pausedSessions || []
+  });
   saveState();
   renderAll();
 }
@@ -771,7 +801,7 @@ async function deleteAllSavedQuestions() {
 
   try {
     await deleteAllCloudData();
-    state = ensureStateShape({ questions: [], sessions: [] });
+    state = ensureStateShape({ questions: [], sessions: [], pausedSessions: [] });
     activeSession = null;
     selectedAnswer = null;
     answerSubmitted = false;
@@ -985,6 +1015,34 @@ function renderTestHistory() {
         <small>${escapeHtml(new Date(session.createdAt).toLocaleString())}</small>
         <small>${answered}/${session.questionIds.length} answered - ${escapeHtml(session.mode)}</small>
       </button>`;
+    })
+    .join("");
+}
+
+function renderPausedSessions() {
+  if (!elements.pausedSessionsPanel || !elements.pausedSessionsList) return;
+  const sessions = [...(state.pausedSessions || [])].sort((a, b) => b.pausedAt - a.pausedAt);
+  elements.pausedSessionsPanel.classList.toggle("hidden", !sessions.length);
+  if (!sessions.length) {
+    elements.pausedSessionsList.innerHTML = "";
+    return;
+  }
+
+  elements.pausedSessionsList.innerHTML = sessions
+    .map((session) => {
+      const total = session.questions.length;
+      const answered = session.results.length;
+      const nextQuestion = Math.min(session.index + 1, total);
+      return `<div class="paused-session-item">
+        <div>
+          <strong>${escapeHtml(getPausedSessionTitle(session))}</strong>
+          <small>${answered}/${total} answered - next Q${nextQuestion} - paused ${escapeHtml(new Date(session.pausedAt).toLocaleString())}</small>
+        </div>
+        <div class="button-row">
+          <button class="small-button" data-resume-session="${session.id}">Resume</button>
+          <button class="small-button danger" data-delete-paused-session="${session.id}">Delete</button>
+        </div>
+      </div>`;
     })
     .join("");
 }
@@ -1210,6 +1268,68 @@ function retakeSession(sessionId) {
   renderCurrentQuestion();
 }
 
+async function pauseCurrentSession() {
+  if (!activeSession) return;
+  if (answerSubmitted && activeSession.index >= activeSession.questions.length - 1) {
+    await finishSession();
+    return;
+  }
+
+  const pausedSession = {
+    ...activeSession,
+    index: answerSubmitted ? activeSession.index + 1 : activeSession.index,
+    pausedAt: Date.now(),
+    results: [...activeSession.results]
+  };
+  state.pausedSessions = [pausedSession, ...(state.pausedSessions || []).filter((session) => session.id !== pausedSession.id)];
+  activeSession = null;
+  selectedAnswer = null;
+  answerSubmitted = false;
+  saveState();
+  elements.questionStage.classList.add("hidden");
+  elements.sessionSetup.classList.remove("hidden");
+  elements.sessionResults.classList.remove("hidden");
+  elements.sessionResults.innerHTML = `<h3>Test paused</h3><p>You can resume it from Paused tests.</p>`;
+  renderAll();
+}
+
+function resumePausedSession(sessionId) {
+  const pausedSession = (state.pausedSessions || []).find((session) => session.id === sessionId);
+  if (!pausedSession) return;
+  const availableQuestionIds = pausedSession.questions.filter((id) => state.questions.some((question) => question.id === id));
+  if (!availableQuestionIds.length) {
+    elements.sessionResults.classList.remove("hidden");
+    elements.sessionResults.innerHTML = `<h3>Could not resume</h3><p>None of the questions from that paused test are available anymore.</p>`;
+    return;
+  }
+
+  activeSession = {
+    id: pausedSession.id,
+    createdAt: pausedSession.createdAt,
+    mode: pausedSession.mode,
+    questions: availableQuestionIds,
+    index: Math.min(pausedSession.index, availableQuestionIds.length - 1),
+    results: (pausedSession.results || []).filter((result) => availableQuestionIds.includes(result.questionId)),
+    filters: pausedSession.filters || {}
+  };
+  state.pausedSessions = (state.pausedSessions || []).filter((session) => session.id !== sessionId);
+  selectedAnswer = null;
+  answerSubmitted = false;
+  saveState();
+  switchView("practice");
+  elements.sessionSetup.classList.add("hidden");
+  elements.sessionResults.classList.add("hidden");
+  elements.questionStage.classList.remove("hidden");
+  renderCurrentQuestion();
+  renderAll();
+}
+
+function deletePausedSession(sessionId) {
+  state.pausedSessions = (state.pausedSessions || []).filter((session) => session.id !== sessionId);
+  saveState();
+  renderAll();
+}
+
 function renderCurrentQuestion() {
   const question = getCurrentQuestion();
   const index = activeSession.index;
@@ -1305,6 +1425,7 @@ async function finishSession() {
 
   if (answered || total) {
     state.sessions = [completedSession, ...(state.sessions || []).filter((session) => session.id !== completedSession.id)];
+    state.pausedSessions = (state.pausedSessions || []).filter((session) => session.id !== completedSession.id);
     saveState();
     try {
       await saveCloudSession(completedSession);
@@ -1342,6 +1463,11 @@ function getCurrentQuestion() {
   return state.questions.find((question) => question.id === activeSession.questions[activeSession.index]);
 }
 
+function getPausedSessionTitle(session) {
+  if (session.filters?.retakeOf) return `Paused retake ${getTestDisplayId({ id: session.filters.retakeOf })}`;
+  return `Paused test ${new Date(session.createdAt).toLocaleDateString()}`;
+}
+
 async function importQuestions() {
   elements.importMessage.textContent = "";
   try {
@@ -1349,8 +1475,10 @@ async function importQuestions() {
     const incoming = Array.isArray(parsed) ? parsed : parsed.questions || [parsed];
     const normalized = incoming.map(normalizeImportedQuestion);
     const importedSessions = Array.isArray(parsed.sessions) ? ensureStateShape({ questions: [], sessions: parsed.sessions }).sessions : [];
+    const importedPausedSessions = Array.isArray(parsed.pausedSessions) ? ensureStateShape({ questions: [], pausedSessions: parsed.pausedSessions }).pausedSessions : [];
     state.questions = [...normalized, ...state.questions];
     state.sessions = [...importedSessions, ...(state.sessions || [])];
+    state.pausedSessions = [...importedPausedSessions, ...(state.pausedSessions || [])];
     saveState();
     if (cloudReady) {
       const { error: questionError } = await supabaseClient.from("questions").upsert(normalized.map(questionToDb), { onConflict: "id" });
@@ -1367,7 +1495,7 @@ async function importQuestions() {
     }
     renderAll();
     elements.importInput.value = "";
-    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}${importedSessions.length ? ` and ${importedSessions.length} test${importedSessions.length === 1 ? "" : "s"}` : ""}${cloudReady ? " to Supabase" : " locally"}.`;
+    elements.importMessage.textContent = `Imported ${normalized.length} question${normalized.length === 1 ? "" : "s"}${importedSessions.length ? `, ${importedSessions.length} completed test${importedSessions.length === 1 ? "" : "s"}` : ""}${importedPausedSessions.length ? `, and ${importedPausedSessions.length} paused test${importedPausedSessions.length === 1 ? "" : "s"}` : ""}${cloudReady ? " to Supabase" : " locally"}.`;
   } catch (error) {
     elements.importMessage.textContent = error.message;
   }
@@ -1378,7 +1506,8 @@ function exportBackup() {
     app: "QuestionForge",
     exportedAt: new Date().toISOString(),
     questions: state.questions,
-    sessions: state.sessions || []
+    sessions: state.sessions || [],
+    pausedSessions: state.pausedSessions || []
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -1472,9 +1601,17 @@ document.querySelectorAll("[data-highlight]").forEach((button) => {
 elements.clearHighlights.addEventListener("click", clearCurrentHighlights);
 
 document.querySelector("#beginSession").addEventListener("click", startSession);
+elements.pauseSession.addEventListener("click", pauseCurrentSession);
 document.querySelector("#endSession").addEventListener("click", finishSession);
 elements.submitAnswer.addEventListener("click", submitCurrentAnswer);
 elements.nextQuestion.addEventListener("click", moveNextOrFinish);
+
+elements.pausedSessionsList.addEventListener("click", (event) => {
+  const resumeId = event.target.dataset.resumeSession;
+  const deleteId = event.target.dataset.deletePausedSession;
+  if (resumeId) resumePausedSession(resumeId);
+  if (deleteId && confirm("Delete this paused test?")) deletePausedSession(deleteId);
+});
 
 elements.questionChoices.addEventListener("click", (event) => {
   const button = event.target.closest(".choice-button");
