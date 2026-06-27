@@ -137,6 +137,16 @@
 
             <article class="question-panel">
               <div class="question-meta" id="questionMeta"></div>
+              <div class="highlight-toolbar" aria-label="Highlight selected question text">
+                <span>Highlight</span>
+                <button class="highlight-swatch yellow" data-highlight="yellow" type="button" aria-label="Yellow highlight"></button>
+                <button class="highlight-swatch pink" data-highlight="pink" type="button" aria-label="Pink highlight"></button>
+                <button class="highlight-swatch peach" data-highlight="peach" type="button" aria-label="Peach highlight"></button>
+                <button class="highlight-swatch green" data-highlight="green" type="button" aria-label="Green highlight"></button>
+                <button class="highlight-swatch blue" data-highlight="blue" type="button" aria-label="Blue highlight"></button>
+                <button class="highlight-swatch lavender" data-highlight="lavender" type="button" aria-label="Lavender highlight"></button>
+                <button id="clearHighlights" class="ghost-button" type="button">Clear</button>
+              </div>
               <h3 id="questionStem"></h3>
               <div id="questionChoices" class="choice-list"></div>
               <div id="feedbackPanel" class="feedback hidden"></div>
@@ -360,6 +370,19 @@
               <p id="authMessage" class="form-message">Not signed in.</p>
               <div class="form-actions">
                 <button id="signOutButton" class="ghost-button">Sign out</button>
+              </div>
+            </section>
+
+            <section class="panel wide-panel">
+              <div class="panel-header">
+                <h3>Appearance</h3>
+              </div>
+              <div class="appearance-grid" id="backgroundThemePicker" aria-label="Choose background">
+                <button class="theme-swatch active" data-theme="pink" type="button"><span class="swatch pink"></span>Light pink</button>
+                <button class="theme-swatch" data-theme="black" type="button"><span class="swatch black"></span>Black</button>
+                <button class="theme-swatch" data-theme="white" type="button"><span class="swatch white"></span>White</button>
+                <button class="theme-swatch" data-theme="lavender" type="button"><span class="swatch lavender"></span>Lavender</button>
+                <button class="theme-swatch" data-theme="blue" type="button"><span class="swatch blue"></span>Light blue</button>
               </div>
             </section>
 

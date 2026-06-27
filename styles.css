@@ -27,6 +27,31 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+body[data-theme="black"] {
+  --bg: #0f0d12;
+  --shadow: 0 14px 38px rgba(0, 0, 0, 0.28);
+}
+
+body[data-theme="white"] {
+  --bg: #ffffff;
+  --line: #e7dde4;
+  --shadow: 0 14px 38px rgba(55, 42, 49, 0.08);
+}
+
+body[data-theme="lavender"] {
+  --bg: #f4efff;
+  --line: #ded1f4;
+  --soft-blue: #ede3ff;
+  --shadow: 0 14px 38px rgba(75, 45, 117, 0.1);
+}
+
+body[data-theme="blue"] {
+  --bg: #eef8ff;
+  --line: #cde6f5;
+  --soft-blue: #e1f2fb;
+  --shadow: 0 14px 38px rgba(36, 88, 118, 0.1);
+}
+
 button,
 input,
 select,
@@ -272,6 +297,59 @@ main {
   grid-column: 1 / -1;
 }
 
+.appearance-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.theme-swatch {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 8px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  font-weight: 750;
+}
+
+.theme-swatch.active,
+.theme-swatch:hover {
+  border-color: var(--accent);
+  background: var(--soft-blue);
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(39, 21, 30, 0.2);
+  flex: 0 0 auto;
+}
+
+.swatch.pink {
+  background: #fff4f8;
+}
+
+.swatch.black {
+  background: #0f0d12;
+}
+
+.swatch.white {
+  background: #ffffff;
+}
+
+.swatch.lavender {
+  background: #f4efff;
+}
+
+.swatch.blue {
+  background: #eef8ff;
+}
+
 .panel {
   padding: 18px;
   min-width: 0;
@@ -461,6 +539,67 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.highlight-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 14px;
+}
+
+.highlight-toolbar span {
+  color: var(--muted);
+  font-weight: 800;
+  margin-right: 2px;
+}
+
+.highlight-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(39, 21, 30, 0.18);
+  padding: 0;
+}
+
+.highlight-swatch.yellow,
+.highlight-mark.yellow {
+  background: #fff3a3;
+}
+
+.highlight-swatch.pink,
+.highlight-mark.pink {
+  background: #ffd1e8;
+}
+
+.highlight-swatch.peach,
+.highlight-mark.peach {
+  background: #ffd8b8;
+}
+
+.highlight-swatch.green,
+.highlight-mark.green {
+  background: #c9f5d5;
+}
+
+.highlight-swatch.blue,
+.highlight-mark.blue {
+  background: #cdefff;
+}
+
+.highlight-swatch.lavender,
+.highlight-mark.lavender {
+  background: #e4d5ff;
+}
+
+.highlight-mark {
+  color: #000000;
+  border-radius: 3px;
+  padding: 0 2px;
 }
 
 .pill {
@@ -834,6 +973,7 @@ legend {
 
   .bank-controls,
   .bulk-delete-box,
+  .appearance-grid,
   .review-summary {
     grid-template-columns: 1fr;
   }

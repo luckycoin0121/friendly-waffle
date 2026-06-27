@@ -1,6 +1,8 @@
 const STORAGE_KEY = "questionforge-state-v1";
 const SUPABASE_CONFIG_KEY = "questionforge-supabase-config-v1";
 const LOCAL_SYNC_BACKUP_KEY = "questionforge-local-sync-backup-v1";
+const APP_PREFS_KEY = "questionforge-prefs-v1";
+const HIGHLIGHTS_KEY = "questionforge-highlights-v1";
 const DEFAULT_SUPABASE_URL = "https://nardxqdhsirmadkqfiys.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_jUmQlZ9N6UjvWXEbA65tMQ_-7qNovuN";
 
@@ -38,6 +40,8 @@ let answerSubmitted = false;
 let supabaseClient = null;
 let currentUser = null;
 let cloudReady = false;
+let appPrefs = loadAppPrefs();
+let questionHighlights = loadQuestionHighlights();
 
 const views = {
   dashboard: document.querySelector("#dashboardView"),
@@ -70,6 +74,8 @@ const elements = {
   questionMeta: document.querySelector("#questionMeta"),
   questionStem: document.querySelector("#questionStem"),
   questionChoices: document.querySelector("#questionChoices"),
+  backgroundThemePicker: document.querySelector("#backgroundThemePicker"),
+  clearHighlights: document.querySelector("#clearHighlights"),
   feedbackPanel: document.querySelector("#feedbackPanel"),
   submitAnswer: document.querySelector("#submitAnswer"),
   nextQuestion: document.querySelector("#nextQuestion"),
@@ -238,6 +244,38 @@ function saveSupabaseConfig(url, key) {
   localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ url, key }));
 }
 
+function loadAppPrefs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(APP_PREFS_KEY) || "{}");
+    return { theme: parsed.theme || "pink" };
+  } catch {
+    return { theme: "pink" };
+  }
+}
+
+function saveAppPrefs() {
+  localStorage.setItem(APP_PREFS_KEY, JSON.stringify(appPrefs));
+}
+
+function applyTheme() {
+  document.body.dataset.theme = appPrefs.theme || "pink";
+  document.querySelectorAll(".theme-swatch").forEach((button) => {
+    button.classList.toggle("active", button.dataset.theme === appPrefs.theme);
+  });
+}
+
+function loadQuestionHighlights() {
+  try {
+    return JSON.parse(localStorage.getItem(HIGHLIGHTS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveQuestionHighlights() {
+  localStorage.setItem(HIGHLIGHTS_KEY, JSON.stringify(questionHighlights));
+}
+
 function renderAll() {
   renderDashboard();
   renderTopicFilter();
@@ -360,6 +398,64 @@ function questionSearchText(question) {
 
 function getTestDisplayId(session) {
   return `T-${String(session.id).slice(0, 8).toUpperCase()}`;
+}
+
+function renderHighlightedStem(question) {
+  const highlights = [...(questionHighlights[question.id] || [])].sort((a, b) => a.start - b.start);
+  if (!highlights.length) return escapeHtml(question.stem);
+
+  let cursor = 0;
+  let html = "";
+  highlights.forEach((highlight) => {
+    const start = Math.max(0, Math.min(question.stem.length, highlight.start));
+    const end = Math.max(start, Math.min(question.stem.length, highlight.end));
+    if (start < cursor || start === end) return;
+    html += escapeHtml(question.stem.slice(cursor, start));
+    html += `<mark class="highlight-mark ${escapeAttribute(highlight.color)}">${escapeHtml(question.stem.slice(start, end))}</mark>`;
+    cursor = end;
+  });
+  html += escapeHtml(question.stem.slice(cursor));
+  return html;
+}
+
+function getSelectionOffsets(container) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return null;
+
+  const preRange = document.createRange();
+  preRange.selectNodeContents(container);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  const start = preRange.toString().length;
+  const selectedText = selection.toString();
+  const end = start + selectedText.length;
+  if (start === end) return null;
+  return { start, end };
+}
+
+function addHighlight(color) {
+  const question = getCurrentQuestion();
+  if (!question) return;
+  const offsets = getSelectionOffsets(elements.questionStem);
+  if (!offsets) return;
+
+  const existing = questionHighlights[question.id] || [];
+  questionHighlights[question.id] = [
+    ...existing.filter((highlight) => highlight.end <= offsets.start || highlight.start >= offsets.end),
+    { ...offsets, color }
+  ].sort((a, b) => a.start - b.start);
+  saveQuestionHighlights();
+  window.getSelection()?.removeAllRanges();
+  elements.questionStem.innerHTML = renderHighlightedStem(question);
+}
+
+function clearCurrentHighlights() {
+  const question = getCurrentQuestion();
+  if (!question) return;
+  delete questionHighlights[question.id];
+  saveQuestionHighlights();
+  elements.questionStem.innerHTML = renderHighlightedStem(question);
 }
 
 function configureSupabase(url, key) {
@@ -1122,7 +1218,7 @@ function renderCurrentQuestion() {
   elements.sessionProgress.textContent = `Question ${index + 1} of ${activeSession.questions.length}`;
   elements.sessionProgressBar.style.width = `${((index + 1) / activeSession.questions.length) * 100}%`;
   elements.questionMeta.innerHTML = `<span class="pill">Q${question.questionNumber}</span>${(question.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}<span class="pill">${escapeHtml(question.difficulty || "Medium")}</span>`;
-  elements.questionStem.textContent = question.stem;
+  elements.questionStem.innerHTML = renderHighlightedStem(question);
   elements.feedbackPanel.className = "feedback hidden";
   elements.feedbackPanel.textContent = "";
   elements.submitAnswer.classList.remove("hidden");
@@ -1361,6 +1457,20 @@ document.querySelectorAll("[data-jump]").forEach((button) => {
   button.addEventListener("click", () => switchView(button.dataset.jump));
 });
 
+elements.backgroundThemePicker.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-theme]");
+  if (!button) return;
+  appPrefs.theme = button.dataset.theme;
+  saveAppPrefs();
+  applyTheme();
+});
+
+document.querySelectorAll("[data-highlight]").forEach((button) => {
+  button.addEventListener("click", () => addHighlight(button.dataset.highlight));
+});
+
+elements.clearHighlights.addEventListener("click", clearCurrentHighlights);
+
 document.querySelector("#beginSession").addEventListener("click", startSession);
 document.querySelector("#endSession").addEventListener("click", finishSession);
 elements.submitAnswer.addEventListener("click", submitCurrentAnswer);
@@ -1544,6 +1654,7 @@ document.querySelector("#loadSample").addEventListener("click", () => {
   );
 });
 
+applyTheme();
 clearForm();
 renderAll();
 initializeSupabase();
