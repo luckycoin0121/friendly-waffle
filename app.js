@@ -98,6 +98,9 @@ const elements = {
   bulkDeleteMessage: document.querySelector("#bulkDeleteMessage"),
   previewBulkDeleteButton: document.querySelector("#previewBulkDeleteButton"),
   bulkDeleteQuestionsButton: document.querySelector("#bulkDeleteQuestionsButton"),
+  subjectDeleteSelect: document.querySelector("#subjectDeleteSelect"),
+  subjectDeleteMessage: document.querySelector("#subjectDeleteMessage"),
+  deleteSubjectTagButton: document.querySelector("#deleteSubjectTagButton"),
   testHistoryList: document.querySelector("#testHistoryList"),
   testReviewPanel: document.querySelector("#testReviewPanel"),
   formTitle: document.querySelector("#formTitle"),
@@ -304,6 +307,7 @@ function saveQuestionHighlights() {
 function renderAll() {
   renderDashboard();
   renderTopicFilter();
+  renderSubjectDeleteOptions();
   renderQuestionList();
   renderTestHistory();
   renderPausedSessions();
@@ -692,6 +696,14 @@ async function saveCloudQuestion(question) {
   if (!cloudReady) return;
   const { error } = await supabaseClient.from("questions").upsert(questionToDb(question), { onConflict: "id" });
   if (error) throw error;
+}
+
+async function saveCloudQuestions(questions) {
+  if (!cloudReady || !questions.length) return;
+  for (const chunk of chunkArray(questions, 100)) {
+    const { error } = await supabaseClient.from("questions").upsert(chunk.map(questionToDb), { onConflict: "id" });
+    if (error) throw error;
+  }
 }
 
 async function deleteCloudQuestion(id) {
@@ -1103,6 +1115,41 @@ function renderTopicFilter() {
     .join("");
 }
 
+function renderSubjectDeleteOptions() {
+  if (!elements.subjectDeleteSelect) return;
+  const currentValue = elements.subjectDeleteSelect.value;
+  const tagCounts = getTagCounts();
+  if (!tagCounts.length) {
+    elements.subjectDeleteSelect.innerHTML = `<option value="">No subjects yet</option>`;
+    elements.subjectDeleteSelect.disabled = true;
+    elements.deleteSubjectTagButton.disabled = true;
+    elements.subjectDeleteMessage.textContent = "No subject tags are saved yet.";
+    return;
+  }
+
+  elements.subjectDeleteSelect.disabled = false;
+  elements.deleteSubjectTagButton.disabled = false;
+  elements.subjectDeleteSelect.innerHTML = `<option value="">Choose a subject...</option>${tagCounts
+    .map(({ tag, count }) => `<option value="${escapeAttribute(tag)}">${escapeHtml(tag)} (${count})</option>`)
+    .join("")}`;
+
+  if (tagCounts.some(({ tag }) => tag === currentValue)) {
+    elements.subjectDeleteSelect.value = currentValue;
+  }
+  updateSubjectDeleteMessage();
+}
+
+function updateSubjectDeleteMessage() {
+  if (!elements.subjectDeleteSelect) return;
+  const tag = elements.subjectDeleteSelect.value;
+  if (!tag) {
+    elements.subjectDeleteMessage.textContent = "Choose a subject to remove it from every question that uses it.";
+    return;
+  }
+  const count = state.questions.filter((question) => (question.tags || []).includes(tag)).length;
+  elements.subjectDeleteMessage.textContent = `"${tag}" is currently on ${count} question${count === 1 ? "" : "s"}.`;
+}
+
 function renderQuestionList() {
   const query = elements.bankSearch.value.trim().toLowerCase();
   const status = elements.bankStatusFilter.value;
@@ -1138,6 +1185,16 @@ function renderQuestionList() {
       </article>`;
     })
     .join("");
+}
+
+function getTagCounts() {
+  const counts = new Map();
+  state.questions.forEach((question) => {
+    (question.tags || []).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1));
+  });
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => a.tag.localeCompare(b.tag));
 }
 
 function addChoiceInput(value = "", checked = false) {
@@ -1328,6 +1385,46 @@ function deletePausedSession(sessionId) {
   state.pausedSessions = (state.pausedSessions || []).filter((session) => session.id !== sessionId);
   saveState();
   renderAll();
+}
+
+async function deleteSelectedSubjectTag() {
+  const tag = elements.subjectDeleteSelect.value;
+  if (!tag) {
+    elements.subjectDeleteMessage.textContent = "Choose a subject tag first.";
+    return;
+  }
+
+  const affectedQuestions = state.questions.filter((question) => (question.tags || []).includes(tag));
+  if (!affectedQuestions.length) {
+    elements.subjectDeleteMessage.textContent = "No questions currently use that subject tag.";
+    renderAll();
+    return;
+  }
+
+  if (!confirm(`Remove "${tag}" from ${affectedQuestions.length} question${affectedQuestions.length === 1 ? "" : "s"}? This will not delete the questions.`)) return;
+
+  elements.deleteSubjectTagButton.disabled = true;
+  elements.subjectDeleteMessage.textContent = "Removing subject tag...";
+
+  affectedQuestions.forEach((question) => {
+    question.tags = (question.tags || []).filter((item) => item !== tag);
+  });
+  const editingId = elements.editingId.value;
+  const editingQuestion = state.questions.find((question) => question.id === editingId);
+  if (editingQuestion) elements.tagsInput.value = (editingQuestion.tags || []).join(", ");
+  saveState();
+
+  let completionMessage;
+  try {
+    await saveCloudQuestions(affectedQuestions);
+    completionMessage = `Removed "${tag}" from ${affectedQuestions.length} question${affectedQuestions.length === 1 ? "" : "s"}.`;
+  } catch (error) {
+    completionMessage = `Removed locally, but Supabase did not save it: ${error.message}`;
+  } finally {
+    elements.deleteSubjectTagButton.disabled = false;
+    renderAll();
+    elements.subjectDeleteMessage.textContent = completionMessage;
+  }
 }
 
 function renderCurrentQuestion() {
@@ -1671,6 +1768,8 @@ elements.bankSearch.addEventListener("input", renderQuestionList);
 elements.bankStatusFilter.addEventListener("change", renderQuestionList);
 elements.previewBulkDeleteButton.addEventListener("click", previewBulkDeleteQuestions);
 elements.bulkDeleteQuestionsButton.addEventListener("click", deleteBulkSelectedQuestions);
+elements.subjectDeleteSelect.addEventListener("change", updateSubjectDeleteMessage);
+elements.deleteSubjectTagButton.addEventListener("click", deleteSelectedSubjectTag);
 elements.bulkDeleteRangeInput.addEventListener("input", () => {
   elements.bulkDeleteMessage.textContent = "Preview a range before deleting.";
 });

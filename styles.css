@@ -934,7 +934,8 @@ legend {
   margin-bottom: 14px;
 }
 
-.bulk-delete-box {
+.bulk-delete-box,
+.subject-delete-box {
   border: 1px solid var(--danger-line);
   background: var(--danger-surface);
   border-radius: 8px;
@@ -944,6 +945,10 @@ legend {
   gap: 12px;
   align-items: end;
   margin-bottom: 14px;
+}
+
+.subject-delete-box {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .bulk-delete-actions {
@@ -1108,6 +1113,7 @@ legend {
 
   .bank-controls,
   .bulk-delete-box,
+  .subject-delete-box,
   .appearance-grid,
   .review-summary {
     grid-template-columns: 1fr;
