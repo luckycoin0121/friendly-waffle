@@ -604,6 +604,14 @@ main {
   width: auto;
 }
 
+.topic-check small {
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding-left: 6px;
+}
+
 label {
   display: grid;
   gap: 7px;

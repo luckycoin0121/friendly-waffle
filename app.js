@@ -1099,17 +1099,18 @@ function renderTestReview(sessionId) {
 }
 
 function renderTopicFilter() {
-  const tags = [...new Set(state.questions.flatMap((question) => question.tags || []))].sort();
+  const tagCounts = getTagCounts();
   const selected = new Set(getSelectedTopics());
-  if (!tags.length) {
+  if (!tagCounts.length) {
     elements.topicFilterList.innerHTML = `<div class="empty-state">No subjects yet.</div>`;
     return;
   }
-  elements.topicFilterList.innerHTML = tags
+  elements.topicFilterList.innerHTML = tagCounts
     .map(
-      (tag) => `<label class="topic-check">
+      ({ tag, count }) => `<label class="topic-check">
         <input type="checkbox" value="${escapeAttribute(tag)}" ${selected.has(tag) ? "checked" : ""} />
         <span>${escapeHtml(tag)}</span>
+        <small>${count}</small>
       </label>`
     )
     .join("");
