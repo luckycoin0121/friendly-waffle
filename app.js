@@ -210,36 +210,54 @@ function ensureStateShape(nextState) {
 
   return {
     questions,
-    sessions: (nextState.sessions || []).map((session) => ({
-      id: session.id || crypto.randomUUID(),
-      title: session.title || "Practice block",
-      mode: session.mode || "tutor",
-      createdAt: Number(session.createdAt || session.created_at || Date.now()),
-      questionIds: session.questionIds || session.question_ids || [],
-      results: (session.results || []).map((result) => ({
+    sessions: (nextState.sessions || []).map((session) => {
+      const questionIds = session.questionIds || session.question_ids || [];
+      const results = (session.results || []).map((result) => ({
         questionId: result.questionId || result.question_id,
         selectedAnswer: Number(result.selectedAnswer),
         correct: Boolean(result.correct),
         timestamp: Number(result.timestamp) || Date.now()
-      })),
-      filters: session.filters || {}
-    })),
-    pausedSessions: (nextState.pausedSessions || []).map((session) => ({
-      id: session.id || crypto.randomUUID(),
-      createdAt: Number(session.createdAt || session.created_at || Date.now()),
-      pausedAt: Number(session.pausedAt || session.paused_at || Date.now()),
-      mode: session.mode || "tutor",
-      questions: session.questions || session.questionIds || session.question_ids || [],
-      index: Math.max(0, Number(session.index) || 0),
-      results: (session.results || []).map((result) => ({
+      }));
+      return {
+        id: session.id || crypto.randomUUID(),
+        title: session.title || "Practice block",
+        mode: session.mode || "tutor",
+        createdAt: Number(session.createdAt || session.created_at || Date.now()),
+        questionIds,
+        results: normalizeSessionResults(results, questionIds),
+        filters: session.filters || {}
+      };
+    }),
+    pausedSessions: (nextState.pausedSessions || []).map((session) => {
+      const questions = session.questions || session.questionIds || session.question_ids || [];
+      const results = (session.results || []).map((result) => ({
         questionId: result.questionId || result.question_id,
         selectedAnswer: Number(result.selectedAnswer),
         correct: Boolean(result.correct),
         timestamp: Number(result.timestamp) || Date.now()
-      })),
-      filters: session.filters || {}
-    }))
+      }));
+      return {
+        id: session.id || crypto.randomUUID(),
+        createdAt: Number(session.createdAt || session.created_at || Date.now()),
+        pausedAt: Number(session.pausedAt || session.paused_at || Date.now()),
+        mode: session.mode || "tutor",
+        questions,
+        index: Math.max(0, Number(session.index) || 0),
+        results: normalizeSessionResults(results, questions),
+        filters: session.filters || {}
+      };
+    })
   };
+}
+
+function normalizeSessionResults(results, questionIds) {
+  const allowed = new Set(questionIds);
+  const firstResultByQuestion = new Map();
+  results.forEach((result) => {
+    if (!allowed.has(result.questionId) || firstResultByQuestion.has(result.questionId)) return;
+    firstResultByQuestion.set(result.questionId, result);
+  });
+  return questionIds.map((questionId) => firstResultByQuestion.get(questionId)).filter(Boolean);
 }
 
 function assignQuestionNumbers(questions) {
@@ -1018,8 +1036,9 @@ function renderTestHistory() {
   elements.testHistoryList.className = "test-history-list";
   elements.testHistoryList.innerHTML = sessions
     .map((session) => {
-      const correct = session.results.filter((result) => result.correct).length;
-      const answered = session.results.length;
+      const results = normalizeSessionResults(session.results || [], session.questionIds || []);
+      const correct = results.filter((result) => result.correct).length;
+      const answered = results.length;
       const score = answered ? Math.round((correct / answered) * 100) : 0;
       return `<button class="test-history-item" data-session="${session.id}">
         <span>${escapeHtml(getTestDisplayId(session))}</span>
@@ -1062,8 +1081,9 @@ function renderPausedSessions() {
 function renderTestReview(sessionId) {
   const session = (state.sessions || []).find((item) => item.id === sessionId);
   if (!session) return;
-  const correct = session.results.filter((result) => result.correct).length;
-  const answered = session.results.length;
+  const results = normalizeSessionResults(session.results || [], session.questionIds || []);
+  const correct = results.filter((result) => result.correct).length;
+  const answered = results.length;
   const score = answered ? Math.round((correct / answered) * 100) : 0;
 
   elements.testReviewPanel.className = "";
@@ -1084,7 +1104,7 @@ function renderTestReview(sessionId) {
         .map((questionId) => {
           const question = state.questions.find((item) => item.id === questionId);
           if (!question) return "";
-          const result = session.results.find((item) => item.questionId === questionId);
+          const result = results.find((item) => item.questionId === questionId);
           const selected = result ? question.choices[result.selectedAnswer] || "No answer" : "No answer";
           return `<article class="review-item">
             <strong class="${result?.correct ? "good-text" : "bad-text"}">${result?.correct ? "Correct" : "Missed or unanswered"}</strong>
@@ -1337,7 +1357,7 @@ async function pauseCurrentSession() {
     ...activeSession,
     index: answerSubmitted ? activeSession.index + 1 : activeSession.index,
     pausedAt: Date.now(),
-    results: [...activeSession.results]
+    results: normalizeSessionResults(activeSession.results, activeSession.questions)
   };
   state.pausedSessions = [pausedSession, ...(state.pausedSessions || []).filter((session) => session.id !== pausedSession.id)];
   activeSession = null;
@@ -1367,7 +1387,7 @@ function resumePausedSession(sessionId) {
     mode: pausedSession.mode,
     questions: availableQuestionIds,
     index: Math.min(pausedSession.index, availableQuestionIds.length - 1),
-    results: (pausedSession.results || []).filter((result) => availableQuestionIds.includes(result.questionId)),
+    results: normalizeSessionResults(pausedSession.results || [], availableQuestionIds),
     filters: pausedSession.filters || {}
   };
   state.pausedSessions = (state.pausedSessions || []).filter((session) => session.id !== sessionId);
@@ -1456,6 +1476,8 @@ function renderCurrentQuestion() {
 
 async function submitCurrentAnswer() {
   if (selectedAnswer === null || answerSubmitted) return;
+  answerSubmitted = true;
+  elements.submitAnswer.disabled = true;
   const question = getCurrentQuestion();
   const correct = selectedAnswer === question.answerIndex;
   const attempt = {
@@ -1465,15 +1487,12 @@ async function submitCurrentAnswer() {
     timestamp: Date.now()
   };
   question.attempts = [...(question.attempts || []), attempt];
-  activeSession.results.push({ questionId: question.id, ...attempt });
-  saveState();
-  try {
-    await saveCloudAttempt(question.id, attempt);
-  } catch (error) {
-    setCloudMessage(`Attempt saved locally, but Supabase did not save it: ${error.message}`);
-  }
-  answerSubmitted = true;
+  activeSession.results = normalizeSessionResults(
+    [...activeSession.results.filter((result) => result.questionId !== question.id), { questionId: question.id, ...attempt }],
+    activeSession.questions
+  );
   showFeedback(question, correct);
+  saveState();
 
   if (activeSession.mode === "exam") {
     moveNextOrFinish();
@@ -1481,7 +1500,13 @@ async function submitCurrentAnswer() {
     elements.submitAnswer.classList.add("hidden");
     elements.nextQuestion.classList.remove("hidden");
   }
-  renderAll();
+
+  saveCloudAttempt(question.id, attempt)
+    .then(() => renderDashboard())
+    .catch((error) => {
+      setCloudMessage(`Attempt saved locally, but Supabase did not save it: ${error.message}`);
+      renderCloudStatus();
+    });
 }
 
 function showFeedback(question, correct) {
@@ -1506,7 +1531,8 @@ function moveNextOrFinish() {
 
 async function finishSession() {
   if (!activeSession) return;
-  const results = activeSession.results;
+  const results = normalizeSessionResults(activeSession.results, activeSession.questions);
+  activeSession.results = results;
   const total = activeSession.questions.length;
   const correct = results.filter((result) => result.correct).length;
   const answered = results.length;
