@@ -1119,7 +1119,7 @@ function renderTestReview(sessionId) {
 }
 
 function renderTopicFilter() {
-  const tagCounts = getTagCounts();
+  const tagCounts = getRemainingTagCounts();
   const selected = new Set(getSelectedTopics());
   if (!tagCounts.length) {
     elements.topicFilterList.innerHTML = `<div class="empty-state">No subjects yet.</div>`;
@@ -1216,6 +1216,17 @@ function getTagCounts() {
   return [...counts.entries()]
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => a.tag.localeCompare(b.tag));
+}
+
+function getRemainingTagCounts() {
+  const allTags = getTagCounts();
+  const unusedCounts = new Map();
+  state.questions
+    .filter((question) => !(question.attempts || []).length)
+    .forEach((question) => {
+      (question.tags || []).forEach((tag) => unusedCounts.set(tag, (unusedCounts.get(tag) || 0) + 1));
+    });
+  return allTags.map(({ tag }) => ({ tag, count: unusedCounts.get(tag) || 0 }));
 }
 
 function addChoiceInput(value = "", checked = false) {
