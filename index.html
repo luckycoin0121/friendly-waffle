@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QuestionForge Practice</title>
-    <link rel="stylesheet" href="styles.css?v=2026-08-21-2" />
+    <link rel="stylesheet" href="styles.css?v=2026-08-25-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -287,6 +287,23 @@
                 </div>
                 <button id="deleteSubjectTagButton" class="danger-action">Delete subject tag</button>
               </div>
+              <div class="subject-edit-box">
+                <div>
+                  <label>
+                    Edit subject tags by question number
+                    <input id="bulkTagRangeInput" placeholder="Example: 2469-2488, 2501, Q2510-Q2515" />
+                  </label>
+                  <label>
+                    New subject tag(s)
+                    <input id="bulkTagInput" placeholder="Example: surgery - uworld, vascular" />
+                  </label>
+                  <p id="bulkTagMessage" class="form-message">Enter question numbers and the subject tag(s) to apply.</p>
+                </div>
+                <div class="bulk-tag-actions">
+                  <button id="previewBulkTagButton" class="ghost-button">Preview</button>
+                  <button id="applyBulkTagButton" class="primary-action">Replace subject tags</button>
+                </div>
+              </div>
               <div id="questionList" class="question-list"></div>
             </section>
           </div>
@@ -443,6 +460,6 @@
     </template>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=2026-08-21-2"></script>
+    <script src="app.js?v=2026-08-25-1"></script>
   </body>
 </html>

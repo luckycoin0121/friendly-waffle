@@ -98,6 +98,11 @@ const elements = {
   bulkDeleteMessage: document.querySelector("#bulkDeleteMessage"),
   previewBulkDeleteButton: document.querySelector("#previewBulkDeleteButton"),
   bulkDeleteQuestionsButton: document.querySelector("#bulkDeleteQuestionsButton"),
+  bulkTagRangeInput: document.querySelector("#bulkTagRangeInput"),
+  bulkTagInput: document.querySelector("#bulkTagInput"),
+  bulkTagMessage: document.querySelector("#bulkTagMessage"),
+  previewBulkTagButton: document.querySelector("#previewBulkTagButton"),
+  applyBulkTagButton: document.querySelector("#applyBulkTagButton"),
   subjectDeleteSelect: document.querySelector("#subjectDeleteSelect"),
   subjectDeleteMessage: document.querySelector("#subjectDeleteMessage"),
   deleteSubjectTagButton: document.querySelector("#deleteSubjectTagButton"),
@@ -890,6 +895,15 @@ function getQuestionsForNumberSelection() {
   return { selectedNumbers, matches };
 }
 
+function getQuestionsForBulkTagEdit() {
+  const selectedNumbers = parseQuestionNumberSelection(elements.bulkTagRangeInput.value);
+  const selectedSet = new Set(selectedNumbers);
+  const matches = state.questions
+    .filter((question) => selectedSet.has(Number(question.questionNumber)))
+    .sort((a, b) => a.questionNumber - b.questionNumber);
+  return { selectedNumbers, matches };
+}
+
 function previewBulkDeleteQuestions() {
   try {
     const { selectedNumbers, matches } = getQuestionsForNumberSelection();
@@ -907,6 +921,78 @@ function previewBulkDeleteQuestions() {
     elements.bulkDeleteMessage.textContent = `Matched ${matches.length} question${matches.length === 1 ? "" : "s"}: Q${first}${matches.length > 1 ? ` through Q${last}` : ""}.`;
   } catch (error) {
     elements.bulkDeleteMessage.textContent = error.message;
+  }
+}
+
+function previewBulkTagEdit() {
+  try {
+    const { selectedNumbers, matches } = getQuestionsForBulkTagEdit();
+    const tags = splitTags(elements.bulkTagInput.value);
+    if (!selectedNumbers.length) {
+      elements.bulkTagMessage.textContent = "Enter question numbers or ranges to preview.";
+      return;
+    }
+    if (!tags.length) {
+      elements.bulkTagMessage.textContent = "Enter at least one new subject tag.";
+      return;
+    }
+    if (!matches.length) {
+      elements.bulkTagMessage.textContent = `No saved questions match ${selectedNumbers.length} selected number${selectedNumbers.length === 1 ? "" : "s"}.`;
+      return;
+    }
+
+    const first = matches[0].questionNumber;
+    const last = matches[matches.length - 1].questionNumber;
+    elements.bulkTagMessage.textContent = `Matched ${matches.length} question${matches.length === 1 ? "" : "s"}: Q${first}${matches.length > 1 ? ` through Q${last}` : ""}. New tag${tags.length === 1 ? "" : "s"}: ${tags.join(", ")}.`;
+  } catch (error) {
+    elements.bulkTagMessage.textContent = error.message;
+  }
+}
+
+async function applyBulkTagEdit() {
+  let matches;
+  let tags;
+  try {
+    ({ matches } = getQuestionsForBulkTagEdit());
+    tags = splitTags(elements.bulkTagInput.value);
+  } catch (error) {
+    elements.bulkTagMessage.textContent = error.message;
+    return;
+  }
+
+  if (!matches.length) {
+    elements.bulkTagMessage.textContent = "No matching questions to edit.";
+    return;
+  }
+  if (!tags.length) {
+    elements.bulkTagMessage.textContent = "Enter at least one new subject tag.";
+    return;
+  }
+
+  const preview = matches.slice(0, 3).map((question) => `Q${question.questionNumber}`).join(", ");
+  if (!confirm(`Replace subject tags on ${matches.length} question${matches.length === 1 ? "" : "s"} (${preview}${matches.length > 3 ? ", ..." : ""}) with "${tags.join(", ")}"?`)) return;
+
+  elements.applyBulkTagButton.disabled = true;
+  elements.bulkTagMessage.textContent = "Replacing subject tags...";
+
+  matches.forEach((question) => {
+    question.tags = [...tags];
+  });
+  const editingId = elements.editingId.value;
+  const editingQuestion = state.questions.find((question) => question.id === editingId);
+  if (editingQuestion) elements.tagsInput.value = (editingQuestion.tags || []).join(", ");
+  saveState();
+
+  let completionMessage;
+  try {
+    await saveCloudQuestions(matches);
+    completionMessage = `Updated subject tags on ${matches.length} question${matches.length === 1 ? "" : "s"}.`;
+  } catch (error) {
+    completionMessage = `Updated locally, but Supabase did not save it: ${error.message}`;
+  } finally {
+    elements.applyBulkTagButton.disabled = false;
+    renderAll();
+    elements.bulkTagMessage.textContent = completionMessage;
   }
 }
 
@@ -1806,10 +1892,18 @@ elements.bankSearch.addEventListener("input", renderQuestionList);
 elements.bankStatusFilter.addEventListener("change", renderQuestionList);
 elements.previewBulkDeleteButton.addEventListener("click", previewBulkDeleteQuestions);
 elements.bulkDeleteQuestionsButton.addEventListener("click", deleteBulkSelectedQuestions);
+elements.previewBulkTagButton.addEventListener("click", previewBulkTagEdit);
+elements.applyBulkTagButton.addEventListener("click", applyBulkTagEdit);
 elements.subjectDeleteSelect.addEventListener("change", updateSubjectDeleteMessage);
 elements.deleteSubjectTagButton.addEventListener("click", deleteSelectedSubjectTag);
 elements.bulkDeleteRangeInput.addEventListener("input", () => {
   elements.bulkDeleteMessage.textContent = "Preview a range before deleting.";
+});
+elements.bulkTagRangeInput.addEventListener("input", () => {
+  elements.bulkTagMessage.textContent = "Enter question numbers and the subject tag(s) to apply.";
+});
+elements.bulkTagInput.addEventListener("input", () => {
+  elements.bulkTagMessage.textContent = "Enter question numbers and the subject tag(s) to apply.";
 });
 elements.topicFilterList.addEventListener("change", () => {});
 elements.clearTopics.addEventListener("click", () => {

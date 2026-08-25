@@ -943,7 +943,8 @@ legend {
 }
 
 .bulk-delete-box,
-.subject-delete-box {
+.subject-delete-box,
+.subject-edit-box {
   border: 1px solid var(--danger-line);
   background: var(--danger-surface);
   border-radius: 8px;
@@ -955,11 +956,17 @@ legend {
   margin-bottom: 14px;
 }
 
+.subject-edit-box {
+  border-color: var(--line);
+  background: var(--subtle-surface);
+}
+
 .subject-delete-box {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.bulk-delete-actions {
+.bulk-delete-actions,
+.bulk-tag-actions {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -1121,6 +1128,7 @@ legend {
 
   .bank-controls,
   .bulk-delete-box,
+  .subject-edit-box,
   .subject-delete-box,
   .appearance-grid,
   .review-summary {
@@ -1132,7 +1140,8 @@ legend {
     flex-direction: column;
   }
 
-  .bulk-delete-actions {
+  .bulk-delete-actions,
+  .bulk-tag-actions {
     align-items: stretch;
     flex-direction: column;
   }
